@@ -1,0 +1,8 @@
+services:
+  api:
+    build:
+      context: ./api/
+      dockerfile: Dockerfile
+      target: ${BUILD_TARGET:-production}
+    env_file:
+      - .env
