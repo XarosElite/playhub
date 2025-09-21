@@ -1,3 +1,12 @@
 name: "api"
 services:
   api:
+    develop:
+      watch:
+        - action: rebuild
+          path: ./requirements.txt
+        - action: sync
+          path: .
+          target: /app
+          ignore:
+            - requirements.txt

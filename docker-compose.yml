@@ -9,6 +9,8 @@ services:
       target: ${BUILD_TARGET:-production}
     env_file:
       - .env
+    ports:
+      - ${API_PORT:-8000}:${API_PORT:-8000}
   frontend:
     extends:
       file: ./frontend/docker-compose.${BUILD_TARGET:-production}.yml
@@ -20,5 +22,5 @@ services:
     env_file:
       - .env
     ports:
-      - 4201:4201
+      - ${FRONTEND_PORT:-80}:${FRONTEND_PORT:-80}
     

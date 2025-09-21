@@ -9,4 +9,5 @@ router = APIRouter(
 
 @router.get("/examples/{username}", tags=["examples"])
 async def read_user(username: str):
+    print("watch this")
     return {"username": username}
