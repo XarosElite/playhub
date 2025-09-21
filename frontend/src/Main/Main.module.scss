@@ -1,0 +1,15 @@
+.logo {
+    width: 10rem;
+}
+
+.navbar {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+}
+
+.themeToggle {
+    display: flex;
+    margin-left: 1rem;
+    margin-bottom: 1rem;
+}

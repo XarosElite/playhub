@@ -1,0 +1,16 @@
+.row {
+    height: 56px;
+
+    &:hover {
+        background-color: light-dark(var(--mantine-color-gray-1), var(--mantine-color-dark-5)) !important;
+        cursor: pointer;
+    }
+
+    &:nth-child(odd) {
+        background-color: light-dark(var(--mantine-color-gray-0), var(--mantine-color-dark-6));
+    }
+}
+
+.pendingActionIndicator {
+    scale: 40%;
+}

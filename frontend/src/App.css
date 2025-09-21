@@ -1,0 +1,4 @@
+/* style overrides for now */
+tr:not(:last-of-type) .mantine-datatable-row-expansion-cell-content {
+    border-bottom: none !important;
+}
