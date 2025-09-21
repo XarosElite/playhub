@@ -4,9 +4,9 @@ services:
     develop:
       watch:
         - action: rebuild
-          path: ./frontend/package.json
+          path: ./package.json
         - action: sync
-          path: ./frontend
+          path: .
           target: /frontend
           ignore:
             - node_modules/
