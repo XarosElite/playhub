@@ -1,0 +1,12 @@
+name: "frontend"
+services:
+  frontend:
+    develop:
+      watch:
+        - action: rebuild
+          path: ./frontend/package.json
+        - action: sync
+          path: ./frontend
+          target: /frontend
+          ignore:
+            - node_modules/

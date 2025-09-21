@@ -1,8 +1,24 @@
 services:
   api:
+    extends:
+      file: ./api/docker-compose.${BUILD_TARGET:-production}.yml
+      service: api
     build:
       context: ./api/
       dockerfile: Dockerfile
       target: ${BUILD_TARGET:-production}
     env_file:
       - .env
+  frontend:
+    extends:
+      file: ./frontend/docker-compose.${BUILD_TARGET:-production}.yml
+      service: frontend
+    build:
+      context: ./frontend/
+      dockerfile: Dockerfile
+      target: ${BUILD_TARGET:-production}
+    env_file:
+      - .env
+    ports:
+      - 4201:4201
+    
