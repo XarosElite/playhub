@@ -64,10 +64,18 @@ services:
     image: tecnativa/docker-socket-proxy:latest
     restart: unless-stopped
     environment:
-      CONTAINERS: "1"  # allow /containers/*
-      IMAGES: "1"      # allow pulls
+      POST: "1"          # allow POST (write) requests
+      CONTAINERS: "1"    # allow /containers/*
+      IMAGES: "1"        # allow pulls (/images/*)
+      ALLOW_START: "1"   # allow POST /containers/{id}/start
+      # Optional depending on your use:
+      NETWORKS: "1"    # if you connect to networks
+      VOLUMES: "1"     # if you create named volumes
+      ALLOW_RESTARTS: "1"  # if you stop/restart/kill
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
+    ports:
+      - "2375:2375"       # internal network only! do NOT expose publicly
 
 
 volumes:

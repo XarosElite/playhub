@@ -1,9 +1,12 @@
 import os
 import redis
 import logging
+import docker
 
 from dotenv import load_dotenv
 from rq import Worker, Queue
+
+
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO) 
