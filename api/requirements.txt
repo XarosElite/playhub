@@ -1,3 +1,5 @@
 requests
 fastapi
 fastapi-cli
+rq
+redis
