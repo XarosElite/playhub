@@ -25,10 +25,10 @@ services:
       - ${FRONTEND_PORT:-80}:${FRONTEND_PORT:-80}
   docker-executer:
     extends:
-      file: ./redis-worker/docker-compose.${BUILD_TARGET:-production}.yml
+      file: ./docker-executer/docker-compose.${BUILD_TARGET:-production}.yml
       service: docker-executer
     build:
-      context: ./redis-worker/
+      context: ./docker-executer/
       dockerfile: Dockerfile
       target: ${BUILD_TARGET:-production}
     env_file:
