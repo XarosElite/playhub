@@ -21,3 +21,10 @@ router = APIRouter(
 async def readq():
     redis_queue.enqueue("tasks.jobs.goob")
     return {"RQ": "enqueued"}
+
+@router.get("/job/{job_id}", tags=["examples"])
+async def job_stat(job_id):
+    job = redis_queue.fetch_job(job_id)
+
+    return {"status": job.get_status()}
+
