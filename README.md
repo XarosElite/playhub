@@ -27,3 +27,6 @@ Bigger, better, faster, and packed with **way more fun**.
 - 🧩 Plugin & mod marketplace  
 
 ---
+
+## New Backend Design Plan
+<img width="954" height="868" alt="image" src="https://github.com/user-attachments/assets/39439f77-8070-4948-a696-72690cbdc65d" />
