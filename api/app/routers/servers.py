@@ -49,7 +49,9 @@ def create_server(payload: dict = Body(...)):
         Returns 200, result
     """
     # Parse Body into Docker Format
-    logging.info("----------------> Logger was hit")
+    logging.info(f"---------------------------------------------------------------")
+    logging.info(f"The Body: {payload}")
+    logging.info(f"---------------------------------------------------------------")
 
     # Enqueue Docker as redis job
 
