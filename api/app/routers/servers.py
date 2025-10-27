@@ -1,4 +1,6 @@
 from fastapi import APIRouter, Body
+from app.depenencies import r_queue
+from app.validators.gamevalidators.minecraft import MinecraftGameValidator
 import logging
 
 router = APIRouter(
@@ -42,23 +44,24 @@ def delete_server(server_id):
 
 
 @router.post('/create')
-def create_server(payload: dict = Body(...)):
+def create_server(redis_queue: r_queue, payload: MinecraftGameValidator):
     """
         Takes in a game config and spins up a docker container hosting the given game.
 
         Returns 200, result
     """
     # Parse Body into Docker Format
-    logging.info(f"---------------------------------------------------------------")
-    logging.info(f"The Body: {payload}")
+    logging.info(f"---------------------------------------------------------------") 
+    logging.info(f"The Body: {payload}") 
     logging.info(f"---------------------------------------------------------------")
 
     # Enqueue Docker as redis job
+    # redis_queue.enqueue("tasks.jobs.goob")
 
     # Add info to DB
 
     # Return Docker Job ID
-    return payload
+    return 200
 
 
 
