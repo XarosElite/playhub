@@ -52,11 +52,11 @@ def create_server(redis_queue: r_queue, payload: MinecraftGameValidator):
     """
     # Parse Body into Docker Format
     logging.info(f"---------------------------------------------------------------") 
-    logging.info(f"The Body: {payload}") 
+    logging.info(f"The Body watched: {payload}") 
     logging.info(f"---------------------------------------------------------------")
 
     # Enqueue Docker as redis job
-    # redis_queue.enqueue("tasks.jobs.goob")
+    redis_queue.enqueue("tasks.jobs.goob", payload.environment.model_dump())
 
     # Add info to DB
 
