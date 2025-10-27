@@ -58,7 +58,7 @@ def create_server(payload: dict = Body(...)):
     # Add info to DB
 
     # Return Docker Job ID
-    return None
+    return payload
 
 
 
