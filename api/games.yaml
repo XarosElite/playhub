@@ -1,0 +1,7 @@
+minecraft:
+  image: itzg/minecraft-server
+  default_port: 25565
+palworld:
+  image: thijsvanloef/palworld-server-docker:latest
+  default_port: 8211
+

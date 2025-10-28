@@ -59,16 +59,16 @@ export const GameServerApi = {
     }
 }
 
-export function gameTypeEnumToString(type: GameType) {
-    switch (type) {
-        case GameType.MINECRAFT:
-            return 'Minecraft';
-        case GameType.PALWORLD:
-            return 'Palworld';
-        default:
-            return 'Unknown';
-    }
-}
+// export function gameTypeEnumToString(type: GameType) {
+//     switch (type) {
+//         case GameType.MINECRAFT:
+//             return 'Minecraft';
+//         case GameType.PALWORLD:
+//             return 'Palworld';
+//         default:
+//             return 'Unknown';
+//     }
+// }
 
 // --------TYPES------------
 export enum ServerCreateStatus {
@@ -79,9 +79,9 @@ export enum ServerCreateStatus {
 }
 
 export enum GameType {
-    MINECRAFT = 1,
-    FOREST = 2,
-    PALWORLD = 3,
+    MINECRAFT = "minecraft",
+    FOREST = "forrest",
+    PALWORLD = "palworld",
     OTHER
 }
 

@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
 
 class BaseGameValidator(BaseModel):
-    GAME_TYPE: int = Field(...)
+    GAME_TYPE: str
 

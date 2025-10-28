@@ -7,7 +7,7 @@ import { IconRestore, IconServer, IconTrash } from "@tabler/icons-react";
 import { DataTable } from 'mantine-datatable';
 import { format } from "date-fns";
 
-import { GameServerApi, gameTypeEnumToString, ServerActionType, TopLevelServerType } from "../../../Api/GameServer";
+import { GameServerApi, ServerActionType, TopLevelServerType } from "../../../Api/GameServer";
 import { SystemInfoContext } from "../../../Store/SystemInfoStore";
 import { gameIconFact } from "../../../Shared/Util";
 import ServerModal from "../ServerModal";
@@ -123,7 +123,7 @@ const ServerTable = () => {
                             title: 'Type',
                             render: (record) => (
                                 <Group gap={'0.5rem'}>
-                                    {gameTypeEnumToString(record.GameType)}
+                                    {record.GameType}
                                     {gameIconFact('1.2rem').get(String(record.GameType))}
                                 </Group>
                             )

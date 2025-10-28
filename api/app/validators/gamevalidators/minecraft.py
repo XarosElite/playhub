@@ -25,6 +25,6 @@ class MinecraftGameValidator(BaseModel):
         A Schema for Validating the minecraft game type config
     '''
     name: str
-    game_type: int
+    # game_type: str
     environment: MinecraftEnviromentValidator
     ports: MinecraftPortValidator

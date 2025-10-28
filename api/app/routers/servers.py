@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Body
 from app.depenencies import r_queue
 from app.validators.gamevalidators.minecraft import MinecraftGameValidator
+from app.internal.config import GAME_CONFIGS
 import logging
 
 router = APIRouter(
@@ -55,8 +56,15 @@ def create_server(redis_queue: r_queue, payload: MinecraftGameValidator):
     logging.info(f"The Body watched: {payload}") 
     logging.info(f"---------------------------------------------------------------")
 
+    logging.info(f"GAME_CONFIGS:{GAME_CONFIGS}")
+
     # Enqueue Docker as redis job
-    redis_queue.enqueue("tasks.jobs.goob", payload.environment.model_dump())
+    img = GAME_CONFIGS.get(payload.game_type).get("image")
+    logging.info(f"img:{img}")
+
+    redis_queue.enqueue("tasks.dockerjobs.create_server", payload.name,
+                        payload.environment.model_dump(), {"25565":"25565"},
+                        img)
 
     # Add info to DB
 

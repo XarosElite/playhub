@@ -12,8 +12,6 @@ def log_request(request: Request):
 
 CommonDeps = Annotated[dict, Depends(common_parameters)]
 
-
-
 redis_conn = Redis(host='redis', port=6379, db=0)
 redis_queue = Queue("default", connection=redis_conn)
 
