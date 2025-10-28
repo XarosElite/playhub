@@ -44,7 +44,7 @@ def delete_server(server_id):
 
 
 
-@router.post('/create')
+@router.post('/create', status_code=201)
 async def create_server(redis_queue: r_queue, payload = Depends(load_game_validator)):
     """
         Takes in a game config and spins up a docker container hosting the given game.
@@ -62,14 +62,14 @@ async def create_server(redis_queue: r_queue, payload = Depends(load_game_valida
     img = GAME_CONFIGS.get(payload.game_type).get("image")
     logging.info(f"img:{img}")
 
-    redis_queue.enqueue("tasks.dockerjobs.create_server", payload.name,
+    job = redis_queue.enqueue("tasks.dockerjobs.create_server", payload.name,
                         payload.environment.model_dump(), {"25565":"25565"},
                         img)
 
     # Add info to DB
 
     # Return Docker Job ID
-    return 200
+    return {"msg": {"job_id": job.id}}
 
 
 

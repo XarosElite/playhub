@@ -25,6 +25,7 @@ export async function waitForJobExit(jobId: string): Promise<boolean> {
         await sleep(3000);
         const jobRes = await JobApi.getStatus(jobId);
         const status = jobRes.msg.status;
+        console.log(status)
 
         if (status === JobStatus.FAILED) {
             return false;
