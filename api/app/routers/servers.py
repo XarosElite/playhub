@@ -1,6 +1,6 @@
-from fastapi import APIRouter, Body
-from app.depenencies import r_queue
-from app.validators.gamevalidators.minecraft import MinecraftGameValidator
+from typing import Annotated
+from fastapi import APIRouter, Body, Depends
+from app.depenencies import r_queue, load_game_validator
 from app.internal.config import GAME_CONFIGS
 import logging
 
@@ -45,7 +45,7 @@ def delete_server(server_id):
 
 
 @router.post('/create')
-def create_server(redis_queue: r_queue, payload: MinecraftGameValidator):
+async def create_server(redis_queue: r_queue, payload = Depends(load_game_validator)):
     """
         Takes in a game config and spins up a docker container hosting the given game.
 

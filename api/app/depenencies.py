@@ -1,8 +1,9 @@
-from fastapi import Depends, Request
+from fastapi import Depends, Request, HTTPException
 from typing import Annotated
 import logging
 from redis import Redis
 from rq import Queue
+from app.validators.gamevalidators import *
 
 async def common_parameters(q: str | None = None, skip: int = 0, limit: int = 100):
     return {"q": q, "skip": skip, "limit": limit}
@@ -22,3 +23,17 @@ async def get_redis_queue() -> Queue:
     return redis_queue
 
 r_queue = Annotated[Queue, Depends(get_redis_queue)]
+
+async def load_game_validator(request:Request):
+    body = await request.json()
+    game_type = BaseGameValidator.model_validate(body).game_type
+
+    match game_type:
+        case "minecraft":
+            return MinecraftGameValidator.model_validate(body)
+        case "palworld":
+            return PalworldGameValidator.model_validate(body)
+        case _:
+            raise HTTPException(400, f"Unknown type '{game_type}'")
+
+

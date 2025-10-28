@@ -1,5 +1,7 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict
 
 class BaseGameValidator(BaseModel):
-    GAME_TYPE: str
+    game_type: str
 
+    # everything else may appear and won’t be validated
+    model_config = ConfigDict(extra='allow')
