@@ -50,6 +50,7 @@ const ServerModal: React.FC<ServerModalProps> = ({opened, closeHandler}) => {
                 notifications.show({title: 'Server status', message: 'Game server created successfully.', position: 'top-right', color: 'green'});
                 handleClose();
             } else {
+                console.log(success);
                 notifications.show({title: 'Server status', message: 'Unable to create game server.', position: 'top-right', color: 'red'});
             }
         }).catch((error: AxiosError<GenericResponse>) => {
