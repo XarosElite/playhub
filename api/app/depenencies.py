@@ -3,6 +3,7 @@ from typing import Annotated
 import logging
 from redis import Redis
 from rq import Queue
+from queue import Queue as q
 from app.validators.gamevalidators import *
 
 async def common_parameters(q: str | None = None, skip: int = 0, limit: int = 100):
@@ -35,5 +36,26 @@ async def load_game_validator(request:Request):
             return PalworldGameValidator.model_validate(body)
         case _:
             raise HTTPException(400, f"Unknown type '{game_type}'")
+
+
+port_lower = 10000
+port_uppper = 10250
+
+free_ports = q(maxsize=port_uppper-port_lower)
+used_ports = []
+
+for i in range(port_uppper-port_lower):
+    free_ports.put(i)
+
+def get_free_port():
+    port = free_ports.get()
+    used_ports.append(port)
+    return port_lower + port
+
+def free_port(port):
+    used_ports.remove(port)
+    free_ports.put(port)
+
+    
 
 
