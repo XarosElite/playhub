@@ -3,3 +3,6 @@ fastapi
 fastapi-cli
 rq
 redis
+sqlalchemy 
+asyncpg 
+psycopg2-binary
