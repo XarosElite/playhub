@@ -27,6 +27,7 @@ const ServerTable = () => {
 
         const interval = setInterval(() => {
             fetchServers();
+            console.log(servers)
         }, 5000);
 
         return () => clearInterval(interval);

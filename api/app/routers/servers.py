@@ -2,6 +2,9 @@ from typing import Annotated
 from fastapi import APIRouter, Body, Depends
 from app.depenencies import r_queue, load_game_validator, get_free_port
 from app.internal.config import GAME_CONFIGS
+from app.database import get_db
+from sqlalchemy import select
+from app.models.servers import Server
 import logging
 
 router = APIRouter(
@@ -11,16 +14,32 @@ router = APIRouter(
     responses={404: {"description": "Not found"}},
 )
 
+def server_to_dict(serv):
+    server_dict = {
+        "Created": True,
+        "GameType": serv.game_type,
+        "ID": serv.container_id,
+        "Image": "temp",
+        "Name": serv.name,
+        "State": "running",
+        "Ports": {"primary_port": serv.port}
+    }
+    return server_dict
 
 @router.get('/')
-def get_servers():
+def get_servers(db = Depends(get_db)):
     """
         Gets a list of all running servers.
 
         Returns 200, result
     """
-    # 
-    return None
+    stmt = select(Server)
+    results = db.scalars(stmt).all()
+
+    results = [server_to_dict(serv) for serv in results]
+    logging.info(results)
+    
+    return {"msg": results}
 
 
 @router.get('/<server_id>')
@@ -45,7 +64,7 @@ def delete_server(server_id):
 
 
 @router.post('/create', status_code=201)
-async def create_server(redis_queue: r_queue, payload = Depends(load_game_validator), port = Depends(get_free_port)):
+async def create_server(redis_queue: r_queue, payload = Depends(load_game_validator), port = Depends(get_free_port), db = Depends(get_db)):
     """
         Takes in a game config and spins up a docker container hosting the given game.
 
@@ -66,6 +85,11 @@ async def create_server(redis_queue: r_queue, payload = Depends(load_game_valida
                         img)
 
     # Add info to DB
+    server = Server(created=False, game_type=payload.game_type, 
+                    container_id="", name=payload.name, state="running",
+                    port=port)
+    db.add(server)
+    db.commit()
 
     # Return Docker Job ID
     return {"msg": {"job_id": job.id}}
