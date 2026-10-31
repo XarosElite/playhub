@@ -1,11 +1,11 @@
 # ============================= base =============================
-FROM node:22 as base
+FROM node:20-alpine as base
 
 WORKDIR /frontend
 
-COPY package.json package.json
+COPY package.json yarn.lock ./
 
-RUN npm install
+RUN yarn install
 
 # ========================= development =========================
 from base as development
