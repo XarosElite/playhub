@@ -18,6 +18,11 @@ CMD ["npm", "run", "dev"]
 
 # ========================= production build =========================
 from base as prodbuild
+# Vite inlines VITE_* variables at build time (passed from .env by docker-compose).
+ARG VITE_FIREBASE_API_KEY
+ARG VITE_FIREBASE_AUTH_DOMAIN
+ARG VITE_FIREBASE_PROJECT_ID
+ARG VITE_FIREBASE_APP_ID
 COPY . .
 RUN npm run build
 

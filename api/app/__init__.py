@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 
 from app.routers import all_routers
 from app.internal import setup_logger
+from app.internal.auth import log_auth_config
 from app.models.servers import Server
 from app.database import Base, engine
 from sqlalchemy.exc import OperationalError
@@ -40,6 +41,7 @@ def init_database():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     setup_logger()
+    log_auth_config()
     init_database()
     yield
 
