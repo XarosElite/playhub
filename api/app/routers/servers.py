@@ -4,7 +4,7 @@ import asyncio
 import docker
 from typing import Annotated
 from fastapi import APIRouter, Body, Depends, HTTPException, WebSocket, WebSocketDisconnect
-from app.depenencies import r_queue, load_game_validator, get_next_available_port
+from app.depenencies import r_queue, load_game_validator, get_next_available_port, GAME_REGISTRY
 from app.internal.config import GAME_CONFIGS
 from app.database import get_db
 from sqlalchemy import select, or_
@@ -58,6 +58,25 @@ def get_servers(db = Depends(get_db)):
     results_dict = [server_to_dict(serv) for serv in results]
     return {"msg": results_dict}
 
+
+@router.get('/games')
+def get_games():
+    """
+    Gets the list of supported game types with their configuration.
+    """
+    games = []
+    for game_type, game_def in GAME_REGISTRY.items():
+        games.append({
+            "game_type": game_type,
+            "image": game_def.get("image", ""),
+            "default_port": game_def.get("default_port", 0),
+            "environment": game_def.get("environment", {}),
+            "common_fields": game_def.get("environment", {}).get("common_fields", []),
+            "docker_override": game_def.get("docker_override", {}),
+        })
+    return {"msg": games}
+
+
 @router.get('/{server_id}')
 def get_server(server_id: str, db = Depends(get_db)):
     """
@@ -100,8 +119,13 @@ async def create_server(redis_queue: r_queue, payload = Depends(load_game_valida
 
     port = get_next_available_port(requested_port=payload.ports.primary_port, db=db)
 
+    # Normalise environment to a dict (handle both Pydantic model and plain dict)
+    env = payload.environment
+    if hasattr(env, "model_dump"):
+        env = env.model_dump()
+
     job = redis_queue.enqueue("tasks.dockerjobs.create_server", payload.name,
-                        payload.environment.model_dump(), {str(internal_port): str(port)},
+                        env, {str(internal_port): str(port)},
                         img)
 
     # Add info to DB
@@ -113,7 +137,7 @@ async def create_server(redis_queue: r_queue, payload = Depends(load_game_valida
         name=payload.name,
         state="starting",
         port=port,
-        config=payload.environment.model_dump()
+        config=env
     )
     db.add(server)
     db.commit()

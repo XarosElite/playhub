@@ -1,7 +1,82 @@
 minecraft:
   image: itzg/minecraft-server
   default_port: 25565
+  environment:
+    common_fields: [server_name, server_description, max_players]
+    fields:
+      EULA:
+        type: boolean
+        default: true
+        common: true
+      MODE:
+        type: string
+        enum: [survival, creative, adventure, spectator]
+        default: survival
+        common: true
+      PVP:
+        type: boolean
+        default: true
+        common: false
+      HARDCORE:
+        type: boolean
+        default: false
+        common: false
+      ENABLE_COMMAND_BLOCK:
+        type: boolean
+        default: false
+        common: false
+      SEED:
+        type: string
+        default: ""
+        common: false
+      WORLD_TYPE:
+        type: string
+        default: "normal"
+        common: false
+  docker_override: {}
 palworld:
   image: thijsvanloef/palworld-server-docker:latest
   default_port: 8211
-
+  environment:
+    common_fields: [server_name, server_description, custom_name, admin_password, pal_password, difficulty, exp_rate, pal_spawn_rate, players, community]
+    fields:
+      CUSTOM_NAME:
+        type: string
+        default: "LIVE RENDER BABYYYYYY"
+        common: true
+      SERVER_DESCRIPTION:
+        type: string
+        default: ""
+        common: true
+      SERVER_PASSWORD:
+        type: string
+        default: ""
+        common: true
+      ADMIN_PASSWORD:
+        type: string
+        default: ""
+        common: true
+      DIFFICULTY:
+        type: string
+        enum: [Casual, Normal, Hard]
+        default: Normal
+        common: true
+      EXP_RATE:
+        type: number
+        default: 1.0
+        common: true
+      PAL_SPAWN:
+        type: number
+        default: 1.0
+        common: true
+      COMMUNITY:
+        type: boolean
+        default: false
+        common: true
+      PLAYERS:
+        type: integer
+        min: 1
+        max: 100
+        default: 32
+        common: true
+  docker_override: {}
