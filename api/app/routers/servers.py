@@ -1,6 +1,9 @@
 import datetime
+import os
+import asyncio
+import docker
 from typing import Annotated
-from fastapi import APIRouter, Body, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from app.depenencies import r_queue, load_game_validator, get_free_port, free_port
 from app.internal.config import GAME_CONFIGS
 from app.database import get_db
@@ -140,3 +143,83 @@ def run_action(server_id: str, redis_queue: r_queue, body: dict = Body(...), db 
         db.commit()
 
     return {"msg": {"job_id": job.id}}
+
+
+@router.websocket('/{server_id}/terminal')
+async def server_terminal_websocket(websocket: WebSocket, server_id: str):
+    await websocket.accept()
+
+    docker_host = os.environ.get("DOCKER_HOST", "tcp://docker-proxy:2375")
+    try:
+        docker_client = docker.DockerClient(base_url=docker_host)
+    except Exception as e:
+        await websocket.send_text(f"\r\n\033[31mError connecting to Docker API: {e}\033[0m\r\n")
+        await websocket.close()
+        return
+
+    target = server_id
+    exec_cmd = ["/bin/sh"]
+    try:
+        exec_inst = docker_client.api.exec_create(
+            container=target,
+            cmd=exec_cmd,
+            stdin=True,
+            stdout=True,
+            stderr=True,
+            tty=True
+        )
+        sock = docker_client.api.exec_start(exec_inst["Id"], detach=False, tty=True, stream=False, socket=True)
+    except Exception:
+        try:
+            exec_inst = docker_client.api.exec_create(
+                container=target,
+                cmd=["/bin/bash"],
+                stdin=True,
+                stdout=True,
+                stderr=True,
+                tty=True
+            )
+            sock = docker_client.api.exec_start(exec_inst["Id"], detach=False, tty=True, stream=False, socket=True)
+        except Exception as ex:
+            await websocket.send_text(f"\r\n\033[31mError starting container terminal exec session: {ex}\033[0m\r\n")
+            await websocket.close()
+            return
+
+    raw_sock = sock._sock if hasattr(sock, '_sock') else sock
+
+    async def read_docker():
+        def _recv():
+            try:
+                return raw_sock.recv(4096)
+            except Exception:
+                return None
+
+        while True:
+            data = await asyncio.to_thread(_recv)
+            if not data:
+                break
+            try:
+                await websocket.send_text(data.decode('utf-8', errors='ignore'))
+            except Exception:
+                break
+
+    read_task = asyncio.create_task(read_docker())
+
+    try:
+        while True:
+            msg = await websocket.receive_text()
+            def _send():
+                try:
+                    raw_sock.sendall(msg.encode('utf-8'))
+                except Exception:
+                    pass
+            await asyncio.to_thread(_send)
+    except (WebSocketDisconnect, Exception):
+        pass
+    finally:
+        read_task.cancel()
+        try:
+            raw_sock.close()
+        except Exception:
+            pass
+

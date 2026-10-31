@@ -9,9 +9,11 @@ services:
       target: ${BUILD_TARGET:-production}
     env_file:
       - .env
+    environment:
+      DOCKER_HOST: tcp://docker-proxy:2375
     ports:
       - ${API_PORT:-8001}:8000
-    depends_on: [db]
+    depends_on: [db, docker-proxy]
   frontend:
     extends:
       file: ./frontend/docker-compose.${BUILD_TARGET:-production}.yml
@@ -67,6 +69,7 @@ services:
     environment:
       POST: "1"          # allow POST (write) requests
       CONTAINERS: "1"    # allow /containers/*
+      EXEC: "1"          # allow /exec/* and /containers/{id}/exec
       IMAGES: "1"        # allow pulls (/images/*)
       ALLOW_START: "1"   # allow POST /containers/{id}/start
       # Optional depending on your use:
