@@ -3,7 +3,7 @@ import { Badge, Button, Group, Loader, Stack, Switch, Text, Tooltip } from "@man
 import { notifications } from "@mantine/notifications";
 import { modals } from "@mantine/modals";
 import { useDisclosure } from "@mantine/hooks";
-import { IconRestore, IconServer, IconTrash } from "@tabler/icons-react";
+import { IconRestore, IconServer, IconTrash, IconTerminal } from "@tabler/icons-react";
 import { DataTable } from 'mantine-datatable';
 import { format } from "date-fns";
 
@@ -11,6 +11,7 @@ import { GameServerApi, ServerActionType, TopLevelServerType } from "../../../Ap
 import { SystemInfoContext } from "../../../Store/SystemInfoStore";
 import { gameIconFact } from "../../../Shared/Util";
 import ServerModal from "../ServerModal";
+import ServerTerminal from "../ServerTerminal";
 
 import classes from './ServerTable.module.scss';
 
@@ -156,25 +157,24 @@ const ServerTable = () => {
                             const pendingAction = modifyingServers.find(s => s === record.ID);
 
                             return (
-                                <>
-                                    <Group className={classes.details} py="md" px="sm" gap={48} align="top">
-                                    <Stack>
-                                        <Group gap={'0.25rem'} align="top">
-                                            <Text fw={600} size="md">Created at:</Text>
-                                             <Text size="md">{formatDate(record.Created)}</Text>
-                                        </Group>
-                                        <Text size="md">{systemInfoStore.systemIP}:{record.Ports.primary_port}</Text>
-                                    </Stack>
-                                    
-                                    {pendingAction ?
-                                        <Group gap={'1rem'}>
-                                            <Text size='md'>
-                                                Server is being updated
-                                            </Text>
-                                            <Loader size='sm'/>
-                                        </Group> :
-                                        <>
-                                            <Group>
+                                <Stack py="md" px="sm" gap="md">
+                                    <Group className={classes.details} gap={48} align="top" justify="space-between">
+                                        <Stack gap="xs">
+                                            <Group gap={'0.25rem'} align="top">
+                                                <Text fw={600} size="md">Created at:</Text>
+                                                <Text size="md">{formatDate(record.Created)}</Text>
+                                            </Group>
+                                            <Text size="md">{systemInfoStore.systemIP}:{record.Ports.primary_port}</Text>
+                                        </Stack>
+                                        
+                                        {pendingAction ?
+                                            <Group gap={'1rem'}>
+                                                <Text size='md'>
+                                                    Server is being updated
+                                                </Text>
+                                                <Loader size='sm'/>
+                                            </Group> :
+                                            <Group align="center">
                                                 <Button
                                                     rightSection={<IconRestore/>}
                                                     variant="outline"
@@ -195,13 +195,13 @@ const ServerTable = () => {
                                                     label={isRunning ? 'Up' : 'Down'}
                                                     onClick={() => doServerAction(record, isRunning ? ServerActionType.STOP : ServerActionType.START)}/>
                                             </Group>
-                                        </>
-                                    }
-                                </Group>
-                                
-                                
-                                </>
-                                
+                                        }
+                                    </Group>
+
+                                    {isRunning && (
+                                        <ServerTerminal serverId={record.ID} serverName={record.Name} />
+                                    )}
+                                </Stack>
                             )
                         },
                     }}
