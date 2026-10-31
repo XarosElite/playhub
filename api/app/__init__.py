@@ -1,4 +1,5 @@
 import logging
+import time
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -9,15 +10,37 @@ from app.routers import all_routers
 from app.internal import setup_logger
 from app.models.servers import Server
 from app.database import Base, engine
+from sqlalchemy.exc import OperationalError
+
+DB_INIT_ATTEMPTS = 15
+DB_INIT_RETRY_SECONDS = 2
+
+
+def init_database():
+    """
+    Create tables, retrying while Postgres starts up. If the database is still
+    unreachable after all attempts, raise so the API fails to start instead of
+    running without its tables.
+    """
+    for attempt in range(1, DB_INIT_ATTEMPTS + 1):
+        try:
+            Base.metadata.create_all(bind=engine)
+            logging.info("Database tables initialized successfully.")
+            return
+        except OperationalError as e:
+            if attempt == DB_INIT_ATTEMPTS:
+                raise
+            logging.warning(
+                f"Database not ready (attempt {attempt}/{DB_INIT_ATTEMPTS}), "
+                f"retrying in {DB_INIT_RETRY_SECONDS}s: {e.orig}"
+            )
+            time.sleep(DB_INIT_RETRY_SECONDS)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     setup_logger()
-    try:
-        Base.metadata.create_all(bind=engine)
-        logging.info("Database tables initialized successfully.")
-    except Exception as e:
-        logging.error(f"Error initializing database tables: {e}")
+    init_database()
     yield
 
 def create_app() -> FastAPI:

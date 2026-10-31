@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Button,
   Checkbox,
@@ -12,15 +12,18 @@ import {
   Text,
   TextInput,
 } from '@mantine/core';
+import { FormErrors, useForm } from '@mantine/form';
 import { notifications } from '@mantine/notifications';
+import { isAxiosError } from 'axios';
 
 import AppModal from '../../../Shared/Components/AppModal/AppModal';
 import { gameIconFact } from '../../../Shared/Util';
 import {
   GameServerApi,
   GameCatalogType,
-  CreateServerPayloadType,
+  CreateServerValidationError,
   EnvironmentFieldSchema,
+  EnvironmentValue,
 } from '../../../Api/GameServer';
 import { validateServerName } from './Forms/shared';
 
@@ -29,6 +32,15 @@ interface ServerModalProps {
   closeHandler: () => void;
 }
 
+interface ServerFormValues {
+  name: string;
+  environment: Record<string, EnvironmentValue>;
+}
+
+type FieldSchemas = Record<string, EnvironmentFieldSchema>;
+
+const envPath = (fieldName: string) => `environment.${fieldName}`;
+
 const renderSelectOption: SelectProps['renderOption'] = ({ option }) => (
   <Group flex="1" justify="space-between" gap="xs">
     {option.label}
@@ -36,109 +48,104 @@ const renderSelectOption: SelectProps['renderOption'] = ({ option }) => (
   </Group>
 );
 
-function formatFieldLabel(key: string): string {
-  if (key === 'EULA') return 'EULA';
-  if (key === 'PVP') return 'PvP';
+function allFields(game: GameCatalogType | null): FieldSchemas {
+  return game ? { ...game.common_fields, ...game.fields } : {};
+}
 
-  const spaced = key.replace(/_/g, ' ');
-  return spaced
-    .split(' ')
-    .map(word => {
-      if (word.toUpperCase() === 'ID') return 'ID';
-      if (word.toUpperCase() === 'IP') return 'IP';
-      return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
-    })
-    .join(' ');
+function initialEnvironment(fields: FieldSchemas): Record<string, EnvironmentValue> {
+  return Object.fromEntries(
+    Object.entries(fields).map(([key, def]) => [key, def.default ?? (def.type === 'boolean' ? false : '')])
+  );
+}
+
+function isEmpty(value: EnvironmentValue | undefined): boolean {
+  return value === undefined || (typeof value === 'string' && value.trim() === '');
+}
+
+/**
+ * Mirrors the backend rules in api/app/internal/config.py so users get inline
+ * errors before submitting. The backend remains the source of truth.
+ */
+function validateEnvironment(values: ServerFormValues, fields: FieldSchemas): FormErrors {
+  const errors: FormErrors = {};
+  for (const [key, def] of Object.entries(fields)) {
+    const value = values.environment[key];
+    if (isEmpty(value)) {
+      if (def.required) errors[envPath(key)] = 'Required';
+      continue;
+    }
+    if (def.type === 'integer' || def.type === 'number') {
+      const num = Number(value);
+      if (!Number.isFinite(num)) errors[envPath(key)] = 'Must be a number';
+      else if (def.min !== undefined && num < def.min) errors[envPath(key)] = `Must be at least ${def.min}`;
+      else if (def.max !== undefined && num > def.max) errors[envPath(key)] = `Must be at most ${def.max}`;
+    }
+  }
+  return errors;
 }
 
 const ServerModal: React.FC<ServerModalProps> = ({ opened, closeHandler }) => {
   const [games, setGames] = useState<GameCatalogType[]>([]);
+  const [gamesLoading, setGamesLoading] = useState<boolean>(false);
   const [selectedGame, setSelectedGame] = useState<GameCatalogType | null>(null);
-  const [serverName, setServerName] = useState<string>('');
-  const [serverNameError, setServerNameError] = useState<string | null>(null);
-  const [envValues, setEnvValues] = useState<Record<string, any>>({});
   const [submitting, setSubmitting] = useState<boolean>(false);
+
+  // The form's validate callback is created once, so it reads the current schema through a ref.
+  const fieldsRef = useRef<FieldSchemas>({});
+  fieldsRef.current = allFields(selectedGame);
+
+  const form = useForm<ServerFormValues>({
+    initialValues: { name: '', environment: {} },
+    validate: values => {
+      const nameError = validateServerName(values.name);
+      return {
+        ...(nameError ? { name: nameError } : {}),
+        ...validateEnvironment(values, fieldsRef.current),
+      };
+    },
+  });
 
   // Fetch supported games list when modal opens
   useEffect(() => {
-    if (opened) {
-      GameServerApi.getGames()
-        .then(catalog => setGames(catalog))
-        .catch(err => {
-          console.error('Error fetching game catalog:', err);
-          notifications.show({
-            title: 'Error',
-            message: 'Failed to load game catalog.',
-            color: 'red',
-          });
+    if (!opened) return;
+    setGamesLoading(true);
+    GameServerApi.getGames()
+      .then(catalog => setGames(catalog))
+      .catch(err => {
+        console.error('Error fetching game catalog:', err);
+        notifications.show({
+          title: 'Error',
+          message: 'Failed to load game catalog.',
+          color: 'red',
         });
-    }
+      })
+      .finally(() => setGamesLoading(false));
   }, [opened]);
 
-  const handleReset = () => {
-    setSelectedGame(null);
-    setServerName('');
-    setServerNameError(null);
-    setEnvValues({});
-    setSubmitting(false);
-  };
-
   const handleClose = () => {
-    handleReset();
+    setSelectedGame(null);
+    setSubmitting(false);
+    form.reset();
     closeHandler();
   };
 
   const handleGameSelect = (gameType: string | null) => {
-    if (!gameType) {
-      setSelectedGame(null);
-      return;
-    }
     const game = games.find(g => g.game_type === gameType) ?? null;
     setSelectedGame(game);
-    setServerName('');
-    setServerNameError(null);
-
-    // Initialize default environment values from both common_fields and fields
-    const initialEnv: Record<string, any> = {};
-    if (game?.common_fields) {
-      Object.entries(game.common_fields).forEach(([key, def]) => {
-        initialEnv[key] = def.default ?? '';
-      });
-    }
-    if (game?.fields) {
-      Object.entries(game.fields).forEach(([key, def]) => {
-        initialEnv[key] = def.default ?? '';
-      });
-    }
-    setEnvValues(initialEnv);
+    form.setFieldValue('environment', initialEnvironment(allFields(game)));
+    form.clearErrors();
   };
 
-  const handleEnvChange = (key: string, value: any) => {
-    setEnvValues(prev => ({
-      ...prev,
-      [key]: value,
-    }));
-  };
-
-  const handleSubmit = () => {
+  const handleSubmit = (values: ServerFormValues) => {
     if (!selectedGame) return;
-
-    const nameError = validateServerName(serverName);
-    if (nameError) {
-      setServerNameError(nameError);
-      return;
-    }
-    setServerNameError(null);
 
     setSubmitting(true);
     // Host port is automatically assigned by backend (starting from 10000)
-    const payload: CreateServerPayloadType = {
+    GameServerApi.createServer({
       game_type: selectedGame.game_type,
-      name: serverName,
-      environment: envValues,
-    };
-
-    GameServerApi.createServer(payload)
+      name: values.name.trim(),
+      environment: values.environment,
+    })
       .then(success => {
         if (success) {
           notifications.show({
@@ -157,188 +164,172 @@ const ServerModal: React.FC<ServerModalProps> = ({ opened, closeHandler }) => {
       })
       .catch(error => {
         console.error('Error creating server:', error);
-        notifications.show({
-          title: 'Server status',
-          message: error?.response?.data?.detail || error?.response?.data?.msg || 'Unable to create game server.',
-          color: 'red',
-        });
+        const detail = isAxiosError(error) ? error.response?.data?.detail : undefined;
+        let message = 'Unable to create game server.';
+
+        if (detail && typeof detail === 'object' && 'fields' in detail) {
+          // Per-field validation errors from the backend: show them inline.
+          const { msg, fields } = detail as CreateServerValidationError;
+          form.setErrors(
+            Object.fromEntries(Object.entries(fields).map(([key, err]) => [envPath(key), err]))
+          );
+          message = msg;
+        } else if (typeof detail === 'string') {
+          message = detail;
+        }
+
+        notifications.show({ title: 'Server status', message, color: 'red' });
       })
       .finally(() => setSubmitting(false));
   };
 
-  // Function to render an environment input field based on its schema
-  const renderField = (fieldName: string, fieldDef: EnvironmentFieldSchema) => {
-    const label = formatFieldLabel(fieldName);
-    const val = envValues[fieldName] ?? fieldDef.default;
+  // Render an environment input field based on its schema
+  const renderField = (fieldName: string, def: EnvironmentFieldSchema) => {
+    const path = envPath(fieldName);
+    const common = {
+      label: def.label,
+      description: def.description,
+      withAsterisk: def.required,
+    };
 
-    // Checkbox for boolean
-    if (fieldDef.type === 'boolean') {
-      return (
-        <Checkbox
-          key={fieldName}
-          mt="xs"
-          label={label}
-          checked={!!val}
-          onChange={e => handleEnvChange(fieldName, e.currentTarget.checked)}
-        />
-      );
+    if (def.type === 'boolean') {
+      return <Checkbox key={fieldName} {...common} mt="xs" {...form.getInputProps(path, { type: 'checkbox' })} />;
     }
 
-    // Select dropdown for Enum values
-    if (fieldDef.enum && fieldDef.enum.length > 0) {
+    if (def.enum && def.enum.length > 0) {
+      const inputProps = form.getInputProps(path);
       return (
         <Select
           key={fieldName}
-          label={label}
-          value={val !== undefined && val !== null ? String(val) : ''}
-          data={fieldDef.enum.map(item => ({ value: String(item), label: String(item) }))}
-          onChange={v => handleEnvChange(fieldName, v)}
+          {...common}
+          {...inputProps}
+          value={isEmpty(inputProps.value) ? null : String(inputProps.value)}
+          onChange={v => form.setFieldValue(path, v ?? '')}
+          placeholder={def.placeholder}
+          allowDeselect={false}
+          data={def.enum.map(item => ({ value: String(item), label: String(item) }))}
         />
       );
     }
 
-    // Number input for integers / floats
-    if (fieldDef.type === 'number' || fieldDef.type === 'integer') {
+    if (def.type === 'number' || def.type === 'integer') {
       return (
         <NumberInput
           key={fieldName}
-          label={label}
-          value={typeof val === 'number' ? val : (fieldDef.default ?? 0)}
-          min={fieldDef.min}
-          max={fieldDef.max}
-          allowDecimal={fieldDef.type === 'number'}
-          onChange={v => handleEnvChange(fieldName, typeof v === 'number' ? v : Number(v))}
+          {...common}
+          {...form.getInputProps(path)}
+          placeholder={def.placeholder ?? (def.default != null ? `Default: ${def.default}` : undefined)}
+          min={def.min}
+          max={def.max}
+          allowDecimal={def.type === 'number'}
         />
       );
     }
 
-    // Password input for secrets/passwords
-    if (fieldDef.type === 'password' || fieldName.toLowerCase().includes('password')) {
-      return (
-        <PasswordInput
-          key={fieldName}
-          label={label}
-          value={String(val ?? '')}
-          onChange={e => handleEnvChange(fieldName, e.currentTarget.value)}
-        />
-      );
+    if (def.type === 'password') {
+      return <PasswordInput key={fieldName} {...common} {...form.getInputProps(path)} placeholder={def.placeholder} />;
     }
 
-    // Standard Text Input
-    return (
-      <TextInput
-        key={fieldName}
-        label={label}
-        value={String(val ?? '')}
-        onChange={e => handleEnvChange(fieldName, e.currentTarget.value)}
-      />
-    );
+    return <TextInput key={fieldName} {...common} {...form.getInputProps(path)} placeholder={def.placeholder} />;
   };
 
-  const hasCommonFields =
-    selectedGame?.common_fields && Object.keys(selectedGame.common_fields).length > 0;
-  const hasGameFields =
-    selectedGame?.fields && Object.keys(selectedGame.fields).length > 0;
+  const commonFields = Object.entries(selectedGame?.common_fields ?? {});
+  const gameFields = Object.entries(selectedGame?.fields ?? {});
 
   return (
     <AppModal opened={opened} closeHandler={handleClose} header="Add Server">
-      <Stack gap="1rem">
-        <Group mb="1rem">
-          <Select
-            value={selectedGame?.game_type ?? null}
-            onChange={handleGameSelect}
-            rightSection={
-              selectedGame ? gameIconFact('1rem').get(selectedGame.game_type) : <></>
-            }
-            rightSectionWidth={30}
-            label="Game"
-            placeholder="Select a game"
-            data={games.map(g => ({
-              value: g.game_type,
-              label: g.game_type.toUpperCase(),
-            }))}
-            renderOption={renderSelectOption}
-          />
-        </Group>
-
-        {selectedGame && (
-          <>
-            {/* Basic Information */}
-            <Text size="lg" fw={600}>
-              Basic Settings
-            </Text>
-            <TextInput
-              withAsterisk
-              label="Server Name"
-              placeholder="e.g. my-awesome-server"
-              value={serverName}
-              error={serverNameError}
-              onChange={e => {
-                setServerName(e.currentTarget.value);
-                setServerNameError(null);
-              }}
+      <form onSubmit={form.onSubmit(handleSubmit)}>
+        <Stack gap="1rem">
+          <Group mb="1rem">
+            <Select
+              value={selectedGame?.game_type ?? null}
+              onChange={handleGameSelect}
+              rightSection={
+                gamesLoading ? (
+                  <Loader size="xs" />
+                ) : selectedGame ? (
+                  gameIconFact('1rem').get(selectedGame.game_type)
+                ) : (
+                  <></>
+                )
+              }
+              rightSectionWidth={30}
+              label="Game"
+              placeholder={gamesLoading ? 'Loading games...' : 'Select a game'}
+              disabled={gamesLoading && games.length === 0}
+              allowDeselect={false}
+              data={games.map(g => ({
+                value: g.game_type,
+                label: g.game_type.toUpperCase(),
+              }))}
+              renderOption={renderSelectOption}
             />
-            <Text size="xs" c="dimmed">
-              Internal Container Port: {selectedGame.internal_port || selectedGame.default_port} (Host port automatically assigned starting from 10000)
-            </Text>
+          </Group>
 
-            {/* Customization Settings */}
-            <Text size="lg" fw={600} mt="0.5rem">
-              Customization
-            </Text>
+          {selectedGame && (
+            <>
+              {/* Basic Information */}
+              <Text size="lg" fw={600}>
+                Basic Settings
+              </Text>
+              <TextInput
+                withAsterisk
+                label="Server Name"
+                placeholder="e.g. my-awesome-server"
+                {...form.getInputProps('name')}
+              />
+              <Text size="xs" c="dimmed">
+                Internal Container Port: {selectedGame.internal_port} (Host port automatically assigned starting from 10000)
+              </Text>
 
-            {/* Common Settings Section */}
-            {hasCommonFields && (
-              <Stack gap="0.6rem">
-                <Text size="sm" fw={600} c="dimmed">
-                  Common Settings
-                </Text>
-                {Object.entries(selectedGame.common_fields!).map(([key, def]) =>
-                  renderField(key, def)
-                )}
-              </Stack>
-            )}
+              {/* Customization Settings */}
+              <Text size="lg" fw={600} mt="0.5rem">
+                Customization
+              </Text>
 
-            {/* Game-Specific Settings Section */}
-            {hasGameFields && (
-              <Stack gap="0.6rem" mt="0.5rem">
-                <Text size="sm" fw={600} c="dimmed">
-                  Game Specific Parameters
-                </Text>
-                {Object.entries(selectedGame.fields!).map(([key, def]) =>
-                  renderField(key, def)
-                )}
-              </Stack>
-            )}
-
-            <Group gap={8} justify="end" mt="1.5rem">
-              {!submitting && (
-                <>
-                  <Button variant="subtle" onClick={handleClose}>
-                    Cancel
-                  </Button>
-                  <Button
-                    type="button"
-                    onClick={handleSubmit}
-                    disabled={!serverName.trim()}
-                  >
-                    Submit
-                  </Button>
-                </>
+              {commonFields.length > 0 && (
+                <Stack gap="0.6rem">
+                  <Text size="sm" fw={600} c="dimmed">
+                    Common Settings
+                  </Text>
+                  {commonFields.map(([key, def]) => renderField(key, def))}
+                </Stack>
               )}
-            </Group>
 
-            {submitting && (
-              <Group justify="flex-end" mt="0.5rem">
-                <Text size="sm" fw={600}>
-                  Creating your game server...
-                </Text>
-                <Loader color="green" size="sm" />
+              {gameFields.length > 0 && (
+                <Stack gap="0.6rem" mt="0.5rem">
+                  <Text size="sm" fw={600} c="dimmed">
+                    Game Specific Parameters
+                  </Text>
+                  {gameFields.map(([key, def]) => renderField(key, def))}
+                </Stack>
+              )}
+
+              <Group gap={8} justify="end" mt="1.5rem">
+                {!submitting && (
+                  <>
+                    <Button variant="subtle" onClick={handleClose}>
+                      Cancel
+                    </Button>
+                    <Button type="submit" disabled={!form.values.name.trim()}>
+                      Submit
+                    </Button>
+                  </>
+                )}
               </Group>
-            )}
-          </>
-        )}
-      </Stack>
+
+              {submitting && (
+                <Group justify="flex-end" mt="0.5rem">
+                  <Text size="sm" fw={600}>
+                    Creating your game server...
+                  </Text>
+                  <Loader color="green" size="sm" />
+                </Group>
+              )}
+            </>
+          )}
+        </Stack>
+      </form>
     </AppModal>
   );
 };

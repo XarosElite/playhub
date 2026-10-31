@@ -1,18 +1,28 @@
+# Game catalog. The schema is documented in api/app/internal/config.py and is
+# validated on API startup.
+#
+# Top-level common_fields are shared definitions. A game opts in by listing
+# them, either by name or as {field: NAME, ...overrides} – e.g. `env` maps the
+# field to a differently named env var in that game's image.
+
 common_fields:
   SERVER_NAME:
     type: string
-    default: ""
+    label: Server Name
+    description: Name shown in the in-game server browser
   SERVER_DESCRIPTION:
     type: string
-    default: ""
+    label: Server Description
   SERVER_PASSWORD:
     type: password
-    default: ""
+    label: Server Password
+    description: Leave empty for a public server
   ADMIN_PASSWORD:
     type: password
-    default: ""
+    label: Admin Password
   MAX_PLAYERS:
     type: integer
+    label: Max Players
     default: 20
     min: 1
     max: 100
@@ -20,63 +30,71 @@ common_fields:
 minecraft:
   image: itzg/minecraft-server
   internal_port: 25565
-  default_port: 25565
   common_fields:
     - MAX_PLAYERS
   fields:
     EULA:
       type: boolean
+      label: Accept Minecraft EULA
+      description: Required by the server to start
       default: true
+      required: true
     MODE:
       type: string
+      label: Game Mode
       enum: [survival, creative, adventure, spectator]
       default: survival
     PVP:
       type: boolean
+      label: PvP
       default: true
     HARDCORE:
       type: boolean
       default: false
     ENABLE_COMMAND_BLOCK:
       type: boolean
+      label: Enable Command Blocks
       default: false
     SEED:
       type: string
-      default: ""
+      label: World Seed
+      description: Leave empty for a random world
     WORLD_TYPE:
       type: string
-      default: "normal"
+      label: World Type
+      default: normal
   docker_override: {}
 
 palworld:
   image: thijsvanloef/palworld-server-docker:latest
   internal_port: 8211
-  default_port: 8211
   common_fields:
     - SERVER_NAME
     - SERVER_DESCRIPTION
     - SERVER_PASSWORD
     - ADMIN_PASSWORD
+    - field: MAX_PLAYERS
+      env: PLAYERS
+      default: 32
   fields:
     CUSTOM_NAME:
       type: string
-      default: "LIVE RENDER BABYYYYYY"
+      label: Custom Name Liv
     DIFFICULTY:
       type: string
       enum: [Casual, Normal, Hard]
       default: Normal
     EXP_RATE:
       type: number
+      label: EXP Rate
       default: 1.0
     PAL_SPAWN:
       type: number
+      label: Pal Spawn Rate
       default: 1.0
     COMMUNITY:
       type: boolean
+      label: Community Server
+      description: List the server in the public community browser
       default: false
-    PLAYERS:
-      type: integer
-      min: 1
-      max: 100
-      default: 32
   docker_override: {}

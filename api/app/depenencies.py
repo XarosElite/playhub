@@ -1,28 +1,14 @@
-import yaml
 import logging
-from pathlib import Path
 from typing import Annotated, Optional, Any
 from fastapi import Depends, Request, HTTPException
 from redis import Redis
 from rq import Queue
 from sqlalchemy import select
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel
 
 from app.database import get_db
 from app.models.servers import Server
-
-# ---------------------------------------------------------------------------
-# Game definition registry – loaded once at module import time.
-# ---------------------------------------------------------------------------
-GAMES_YAML_PATH = Path(__file__).resolve().parent.parent / "games.yaml"
-
-with open(GAMES_YAML_PATH) as f:
-    _RAW_GAMES = yaml.safe_load(f)
-
-GLOBAL_COMMON_FIELDS: dict[str, dict] = _RAW_GAMES.get("common_fields", {})
-GAME_REGISTRY: dict[str, dict] = {
-    _gt: _gd for _gt, _gd in _RAW_GAMES.items() if _gt != "common_fields"
-}
+from app.internal.config import GAMES, EnvironmentValidationError, validate_environment
 
 # ---------------------------------------------------------------------------
 # Port constants (Automatic host port allocation range)
@@ -48,51 +34,45 @@ async def get_redis_queue() -> Queue:
 r_queue = Annotated[Queue, Depends(get_redis_queue)]
 
 # ---------------------------------------------------------------------------
-# Dynamic Game Creation Payload Model
+# Server creation payload
 # ---------------------------------------------------------------------------
-class DynamicPortValidator(BaseModel):
-    primary_port: int = Field(default=0)
-
-
-class DynamicGamePayload(BaseModel):
+class CreateServerPayload(BaseModel):
     name: str
     game_type: str
-    environment: dict[str, Any] = Field(default_factory=dict)
-    ports: DynamicPortValidator = Field(default_factory=DynamicPortValidator)
+    # Typed settings keyed by field name (stored in the DB).
+    settings: dict[str, Any]
+    # String env vars keyed by container env var name (passed to Docker).
+    container_env: dict[str, str]
 
-    model_config = ConfigDict(extra='allow')
 
-
-async def load_game_validator(request: Request) -> DynamicGamePayload:
-    """Validate server-creation payload dynamically supporting any game in GAME_REGISTRY."""
-    body = await request.json()
+async def load_game_validator(request: Request) -> CreateServerPayload:
+    """Validate a server-creation payload against the game's schema in games.yaml."""
+    try:
+        body = await request.json()
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Request body must be JSON")
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail="Request body must be an object")
 
     game_type = body.get("game_type")
-    if not game_type or game_type not in GAME_REGISTRY:
+    game = GAMES.get(game_type) if isinstance(game_type, str) else None
+    if game is None:
         raise HTTPException(status_code=400, detail=f"Unsupported or missing game_type: '{game_type}'")
 
     server_name = body.get("name")
-    if not server_name:
+    if not isinstance(server_name, str) or not server_name.strip():
         raise HTTPException(status_code=422, detail="Server 'name' is required")
 
-    ports_data = body.get("ports", {})
-    if isinstance(ports_data, int):
-        ports_data = {"primary_port": ports_data}
-    elif not isinstance(ports_data, dict):
-        ports_data = {}
+    try:
+        settings, container_env = validate_environment(game, body.get("environment"))
+    except EnvironmentValidationError as e:
+        raise HTTPException(status_code=422, detail={"msg": str(e), "fields": e.errors})
 
-    if "primary_port" not in ports_data and "primary_port" in body:
-        ports_data["primary_port"] = body["primary_port"]
-
-    env_data = body.get("environment", {})
-    if not isinstance(env_data, dict):
-        env_data = {}
-
-    return DynamicGamePayload(
-        name=server_name,
+    return CreateServerPayload(
+        name=server_name.strip(),
         game_type=game_type,
-        environment=env_data,
-        ports=DynamicPortValidator(primary_port=int(ports_data.get("primary_port", 0)))
+        settings=settings,
+        container_env=container_env,
     )
 
 

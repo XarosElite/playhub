@@ -8,10 +8,9 @@ from app.depenencies import (
     r_queue,
     load_game_validator,
     get_next_available_port,
-    GAME_REGISTRY,
-    GLOBAL_COMMON_FIELDS,
+    CreateServerPayload,
 )
-from app.internal.config import GAME_CONFIGS
+from app.internal.config import GAMES, public_game
 from app.database import get_db
 from sqlalchemy import select, or_
 from app.models.servers import Server
@@ -25,7 +24,7 @@ router = APIRouter(
 )
 
 def server_to_dict(serv):
-    img = GAME_CONFIGS.get(serv.game_type, {}).get("image", "unknown") if serv.game_type else "unknown"
+    img = GAMES.get(serv.game_type, {}).get("image", "unknown") if serv.game_type else "unknown"
     server_id = serv.container_id if serv.container_id else serv.name
 
     created_val = serv.created
@@ -70,34 +69,7 @@ def get_games():
     """
     Gets the list of supported game types with their configuration.
     """
-    games = []
-    for game_type, game_def in GAME_REGISTRY.items():
-        # Resolve common fields from top-level definitions
-        resolved_common_fields = {}
-        raw_common = game_def.get("common_fields", [])
-        if isinstance(raw_common, list):
-            for field_name in raw_common:
-                if field_name in GLOBAL_COMMON_FIELDS:
-                    resolved_common_fields[field_name] = GLOBAL_COMMON_FIELDS[field_name]
-                else:
-                    resolved_common_fields[field_name] = {"type": "string", "default": ""}
-        elif isinstance(raw_common, dict):
-            resolved_common_fields = raw_common
-
-        # Game-specific fields are directly listed under 'fields'
-        raw_fields = game_def.get("fields") or game_def.get("environment", {}).get("fields", {})
-
-        internal_port = game_def.get("internal_port") or game_def.get("default_port", 0)
-
-        games.append({
-            "game_type": game_type,
-            "image": game_def.get("image", ""),
-            "internal_port": internal_port,
-            "default_port": internal_port,
-            "common_fields": resolved_common_fields,
-            "fields": raw_fields,
-            "docker_override": game_def.get("docker_override", {}),
-        })
+    games = [public_game(game) for game in GAMES.values()]
     return {"msg": games}
 
 
@@ -129,30 +101,23 @@ def delete_server(server_id: str, redis_queue: r_queue, db = Depends(get_db)):
     return {"msg": {"job_id": job.id}}
 
 @router.post('/create', status_code=201)
-async def create_server(redis_queue: r_queue, payload = Depends(load_game_validator), db = Depends(get_db)):
+async def create_server(redis_queue: r_queue, payload: CreateServerPayload = Depends(load_game_validator), db = Depends(get_db)):
     """
     Takes in a game config and spins up a docker container hosting the given game.
+    The environment is validated against the game's schema in games.yaml.
     Host port is automatically allocated starting from 10000.
     """
-    logging.info(f"Creating server payload: {payload}")
+    logging.info(f"Creating {payload.game_type} server '{payload.name}'")
 
-    game_cfg = GAME_CONFIGS.get(payload.game_type, {})
-    img = game_cfg.get("image")
-    internal_port = game_cfg.get("internal_port") or game_cfg.get("default_port")
-    
-    if not img or not internal_port:
-        raise HTTPException(status_code=400, detail=f"Unsupported game_type: {payload.game_type}")
+    game = GAMES[payload.game_type]
+    img = game["image"]
+    internal_port = game["internal_port"]
 
     # Automatically allocate host port (starting from 10000) - host port is not decided by user
     port = get_next_available_port(requested_port=None, db=db)
 
-    # Normalise environment to a dict (handle both Pydantic model and plain dict)
-    env = payload.environment
-    if hasattr(env, "model_dump"):
-        env = env.model_dump()
-
     job = redis_queue.enqueue("tasks.dockerjobs.create_server", payload.name,
-                        env, {str(internal_port): str(port)},
+                        payload.container_env, {str(internal_port): str(port)},
                         img)
 
     # Add info to DB
@@ -164,7 +129,7 @@ async def create_server(redis_queue: r_queue, payload = Depends(load_game_valida
         name=payload.name,
         state="starting",
         port=port,
-        config=env
+        config=payload.settings
     )
     db.add(server)
     db.commit()

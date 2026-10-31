@@ -2,15 +2,6 @@ import { hasLength } from "@mantine/form";
 
 
 /**
- * All forms should use this implementation
- */
-export interface ServerFormProps<T> {
-    onClose: () => void;
-    onSubmit: (data: T) => void;
-    submitting: boolean;
-}
-
-/**
  * Validates a server name in the form creation.
  * @param value the value to validate
  * @returns 

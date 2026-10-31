@@ -1,4 +1,3 @@
-import React from "react";
 import { Image } from "@mantine/core";
 
 import minecraftLogo from '/minecraft_icon.svg';

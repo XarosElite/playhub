@@ -19,7 +19,7 @@ export const GameServerApi = {
     },
     /**
      * Fetches the list of supported game types with their configuration
-     * (environment schema, common vs specific fields, docker overrides).
+     * (environment schema split into common and game-specific fields).
      * @returns Promise<GameCatalogType[]>
      */
     getGames: async function (): Promise<GameCatalogType[]> {
@@ -32,7 +32,7 @@ export const GameServerApi = {
     },
     /**
      * Creates and polls for creation status of the server.
-     * @param payload - The server config parameters (game_type, name, environment dict, ports).
+     * @param payload - The server config parameters (game_type, name, environment dict).
      * @returns Promise<boolean> - Whether create was successful
      */
     createServer: async function (payload: CreateServerPayloadType): Promise<boolean> {
@@ -80,10 +80,18 @@ export enum ServerCreateStatus {
     FAILED
 }
 
+export type EnvironmentFieldType = 'string' | 'password' | 'boolean' | 'integer' | 'number';
+export type EnvironmentValue = string | number | boolean;
+
+// A single configurable setting, as defined in api/games.yaml.
 export interface EnvironmentFieldSchema {
-    type?: string;
-    default?: any;
-    enum?: string[];
+    type: EnvironmentFieldType;
+    label: string;
+    required: boolean;
+    default: EnvironmentValue | null;
+    description?: string;
+    placeholder?: string;
+    enum?: (string | number)[];
     min?: number;
     max?: number;
 }
@@ -92,21 +100,23 @@ export interface EnvironmentFieldSchema {
 export interface GameCatalogType {
     game_type: string;
     image: string;
-    internal_port?: number;
-    default_port: number;
-    common_fields?: Record<string, EnvironmentFieldSchema>;
-    fields?: Record<string, EnvironmentFieldSchema>;
-    docker_override?: any;
+    internal_port: number;
+    common_fields: Record<string, EnvironmentFieldSchema>;
+    fields: Record<string, EnvironmentFieldSchema>;
 }
 
-// Generic create server payload – frontend sends game_type + name + environment dict.
+// Create server payload – the backend validates `environment` against the game's schema.
+// Empty values ('') fall back to the field's default.
 export interface CreateServerPayloadType {
     game_type: string;
     name: string;
-    environment: Record<string, any>;
-    ports?: {
-        primary_port?: number;
-    };
+    environment: Record<string, EnvironmentValue>;
+}
+
+// 422 body returned by POST /servers/create when settings fail validation.
+export interface CreateServerValidationError {
+    msg: string;
+    fields: Record<string, string>;
 }
 
 // Response types
