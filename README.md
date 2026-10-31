@@ -9,6 +9,7 @@ Playhub 2.0 is a self-hosted game server manager built on Docker. It provides a 
 - **In-Browser Interactive Terminal**: Attach directly to running game server containers with an interactive terminal session over WebSockets.
 - **Real-Time System Monitoring**: Live CPU and RAM usage charts, IP detection, and server status updates.
 - **Task Queue Architecture**: Uses Redis Queue (RQ) and Docker Socket Proxy to run container operations asynchronously in the background.
+- **Port Auto-Assignment**: Automatic available port detection via `get_next_available_port` to prevent port conflicts.
 
 ## System Architecture
 
@@ -18,7 +19,7 @@ Playhub consists of six containerized services managed via Docker Compose:
 - **API**: FastAPI backend handling server configuration, job enqueuing, system stats, and WebSocket terminal streaming.
 - **Docker Executer**: Python RQ worker processing container lifecycle tasks.
 - **Redis**: Queue and state storage for asynchronous background jobs.
-- **Database**: PostgreSQL storing server metadata.
+- **Database**: PostgreSQL storing server metadata with `config` (JSON) and `owner_id` fields.
 - **Docker Proxy**: `tecnativa/docker-socket-proxy` providing restricted access to the Docker daemon.
 
 ## Prerequisites
@@ -45,6 +46,7 @@ Key environment variables in `.env`:
 | `POSTGRES_USER` | PostgreSQL user | `playhuber` |
 | `POSTGRES_PASSWORD` | PostgreSQL password | `Blayhub` |
 | `POSTGRES_PORT` | Internal PostgreSQL port | `5432` |
+| `GET_NEXT_AVAILABLE_PORT` | Use automated port allocation (true/false) | `true` |
 
 ---
 
@@ -107,6 +109,21 @@ docker compose down
 docker compose restart api
 ```
 
+## Server Management
+
+- **Create Server**: Via the Web UI, select game type and configuration. Ports are automatically assigned from available range.
+- **Server Configuration**: Server parameters and environment settings are stored in the `config` JSON field in the database.
+- **Unique Ports**: Each server is assigned a unique port to prevent conflicts.
+
 ## Backend Design Architecture
 
 <img width="954" height="868" alt="Playhub Backend Design" src="https://github.com/user-attachments/assets/39439f77-8070-4948-a696-72690cbdc65d" />
+
+### Component Overview
+
+- **Frontend** (React + Vite + Mantine UI): Provides the web interface for server management, monitoring, and terminal access. Uses xterm.js for WebSocket-based interactive terminals.
+- **API** (FastAPI): Handles HTTP requests for server lifecycle (create/start/stop/delete), job enqueuing, system stats, and WebSocket terminal streaming. Connects to PostgreSQL for persistent data and Redis for job queue management.
+- **Docker Executer** (Python RQ worker): Background worker that processes container lifecycle tasks from the Redis queue. Interacts with the Docker daemon via `docker-socket-proxy` to create, start, stop, and remove containers.
+- **Redis**: Message queue and state storage. Holds pending jobs, server status, and facilitates communication between API and workers.
+- **PostgreSQL**: Persistent storage for server metadata including name, game type, state, port assignment, configuration (JSON), and creation timestamps.
+- **Docker Proxy** (`tecnativa/docker-socket-proxy`): Provides restricted, namespace-limited access to the Docker daemon for the API and worker services.

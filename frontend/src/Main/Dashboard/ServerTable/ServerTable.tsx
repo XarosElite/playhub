@@ -3,7 +3,7 @@ import { Badge, Button, Group, Loader, Stack, Switch, Text, Tooltip } from "@man
 import { notifications } from "@mantine/notifications";
 import { modals } from "@mantine/modals";
 import { useDisclosure } from "@mantine/hooks";
-import { IconRestore, IconServer, IconTrash, IconTerminal } from "@tabler/icons-react";
+import { IconRestore, IconServer, IconTrash } from "@tabler/icons-react";
 import { DataTable } from 'mantine-datatable';
 import { format } from "date-fns";
 

@@ -13,7 +13,11 @@ services:
       DOCKER_HOST: tcp://docker-proxy:2375
     ports:
       - ${API_PORT:-8001}:8000
-    depends_on: [db, docker-proxy]
+    depends_on:
+      db:
+        condition: service_healthy
+      docker-proxy:
+        condition: service_started
   frontend:
     extends:
       file: ./frontend/docker-compose.${BUILD_TARGET:-production}.yml
@@ -51,12 +55,12 @@ services:
   db:
     image: postgres:latest
     restart: always
-    # healthcheck:
-    #   test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
-    #   interval: 10s
-    #   retries: 5
-    #   start_period: 30s
-    #   timeout: 10s
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 2s
+      retries: 15
+      start_period: 30s
+      timeout: 5s
     env_file:
       - .env
     # volumes:

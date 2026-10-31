@@ -4,8 +4,13 @@ import asyncio
 import docker
 from typing import Annotated
 from fastapi import APIRouter, Body, Depends, HTTPException, WebSocket, WebSocketDisconnect
-from app.depenencies import r_queue, load_game_validator, get_free_port, free_port
-from app.internal.config import GAME_CONFIGS
+from app.depenencies import (
+    r_queue,
+    load_game_validator,
+    get_next_available_port,
+    CreateServerPayload,
+)
+from app.internal.config import GAMES, public_game
 from app.database import get_db
 from sqlalchemy import select, or_
 from app.models.servers import Server
@@ -19,15 +24,17 @@ router = APIRouter(
 )
 
 def server_to_dict(serv):
-    img = GAME_CONFIGS.get(serv.game_type, {}).get("image", "unknown") if serv.game_type else "unknown"
+    img = GAMES.get(serv.game_type, {}).get("image", "unknown") if serv.game_type else "unknown"
     server_id = serv.container_id if serv.container_id else serv.name
 
     created_val = serv.created
-    if not created_val or created_val in ("False", "True"):
+    if isinstance(created_val, datetime.datetime):
+        created_val = created_val.isoformat()
+    elif not created_val or str(created_val) in ("False", "True"):
         created_val = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
     return {
-        "Created": created_val,
+        "Created": str(created_val),
         "GameType": serv.game_type,
         "ID": server_id,
         "Image": img,
@@ -55,6 +62,16 @@ def get_servers(db = Depends(get_db)):
     results = db.scalars(stmt).all()
     results_dict = [server_to_dict(serv) for serv in results]
     return {"msg": results_dict}
+
+
+@router.get('/games')
+def get_games():
+    """
+    Gets the list of supported game types with their configuration.
+    """
+    games = [public_game(game) for game in GAMES.values()]
+    return {"msg": games}
+
 
 @router.get('/{server_id}')
 def get_server(server_id: str, db = Depends(get_db)):
@@ -84,27 +101,36 @@ def delete_server(server_id: str, redis_queue: r_queue, db = Depends(get_db)):
     return {"msg": {"job_id": job.id}}
 
 @router.post('/create', status_code=201)
-async def create_server(redis_queue: r_queue, payload = Depends(load_game_validator), port = Depends(get_free_port), db = Depends(get_db)):
+async def create_server(redis_queue: r_queue, payload: CreateServerPayload = Depends(load_game_validator), db = Depends(get_db)):
     """
     Takes in a game config and spins up a docker container hosting the given game.
+    The environment is validated against the game's schema in games.yaml.
+    Host port is automatically allocated starting from 10000.
     """
-    logging.info(f"Creating server payload: {payload}")
+    logging.info(f"Creating {payload.game_type} server '{payload.name}'")
 
-    img = GAME_CONFIGS.get(payload.game_type, {}).get("image")
-    internal_port = GAME_CONFIGS.get(payload.game_type, {}).get("default_port")
-    
-    if not img or not internal_port:
-        raise HTTPException(status_code=400, detail=f"Unsupported game_type: {payload.game_type}")
+    game = GAMES[payload.game_type]
+    img = game["image"]
+    internal_port = game["internal_port"]
+
+    # Automatically allocate host port (starting from 10000) - host port is not decided by user
+    port = get_next_available_port(requested_port=None, db=db)
 
     job = redis_queue.enqueue("tasks.dockerjobs.create_server", payload.name,
-                        payload.environment.model_dump(), {str(internal_port): str(port)},
+                        payload.container_env, {str(internal_port): str(port)},
                         img)
 
     # Add info to DB
-    created_time = datetime.datetime.now(datetime.timezone.utc).isoformat()
-    server = Server(created=created_time, game_type=payload.game_type, 
-                    container_id="", name=payload.name, state="starting",
-                    port=port)
+    now_utc = datetime.datetime.now(datetime.timezone.utc)
+    server = Server(
+        created=now_utc,
+        game_type=payload.game_type, 
+        container_id="",
+        name=payload.name,
+        state="starting",
+        port=port,
+        config=payload.settings
+    )
     db.add(server)
     db.commit()
 

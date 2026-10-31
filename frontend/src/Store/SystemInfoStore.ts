@@ -9,7 +9,7 @@ import { format } from "date-fns";
 class SystemInfoStore {
     public static SYSTEM_HISTORY_LENGTH = 60;
     public systemHistory: SystemInfoType[] = [];
-    public systemIP: string = "erm";
+    public systemIP: string = "Loading...";
 
     constructor() {
         makeAutoObservable(this, { fetchSystemInfoPoint: action });

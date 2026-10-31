@@ -5,8 +5,14 @@ services:
       watch:
         - action: rebuild
           path: ./requirements.txt
+        # The game catalog is loaded once at startup and `fastapi dev` only
+        # reloads on .py changes, so restart the API when games.yaml changes.
+        - action: sync+restart
+          path: ./games.yaml
+          target: /app/games.yaml
         - action: sync
           path: .
           target: /app
           ignore:
             - requirements.txt
+            - games.yaml

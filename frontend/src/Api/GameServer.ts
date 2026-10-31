@@ -7,7 +7,6 @@ import { waitForJobExit } from "./Job";
 export const GameServerApi = {
     /**
      * Fetches game servers
-     * @param cancel cancels the request
      * @returns Promise<GetAllServerResType>
      */
     getServers: async function (): Promise<GetAllServerResType> {
@@ -19,11 +18,24 @@ export const GameServerApi = {
         return response.data;
     },
     /**
+     * Fetches the list of supported game types with their configuration
+     * (environment schema split into common and game-specific fields).
+     * @returns Promise<GameCatalogType[]>
+     */
+    getGames: async function (): Promise<GameCatalogType[]> {
+        const response = await api.request({
+            url: `/servers/games`,
+            method: "GET",
+        });
+
+        return response.data.msg;
+    },
+    /**
      * Creates and polls for creation status of the server.
-     * @param payload - The server config parameters.
+     * @param payload - The server config parameters (game_type, name, environment dict).
      * @returns Promise<boolean> - Whether create was successful
      */
-    createServer: async function (payload: CreateServerType): Promise<boolean> {
+    createServer: async function (payload: CreateServerPayloadType): Promise<boolean> {
         // Create the server and retrieve the job ID.
         const response = await api.request({
             url: `/servers/create`,
@@ -59,18 +71,8 @@ export const GameServerApi = {
     }
 }
 
-// export function gameTypeEnumToString(type: GameType) {
-//     switch (type) {
-//         case GameType.MINECRAFT:
-//             return 'Minecraft';
-//         case GameType.PALWORLD:
-//             return 'Palworld';
-//         default:
-//             return 'Unknown';
-//     }
-// }
-
 // --------TYPES------------
+
 export enum ServerCreateStatus {
     QUEUED = 1,
     STARTED,
@@ -78,18 +80,43 @@ export enum ServerCreateStatus {
     FAILED
 }
 
-export enum GameType {
-    MINECRAFT = "minecraft",
-    FOREST = "forrest",
-    PALWORLD = "palworld",
-    OTHER
+export type EnvironmentFieldType = 'string' | 'password' | 'boolean' | 'integer' | 'number';
+export type EnvironmentValue = string | number | boolean;
+
+// A single configurable setting, as defined in api/games.yaml.
+export interface EnvironmentFieldSchema {
+    type: EnvironmentFieldType;
+    label: string;
+    required: boolean;
+    default: EnvironmentValue | null;
+    description?: string;
+    placeholder?: string;
+    enum?: (string | number)[];
+    min?: number;
+    max?: number;
 }
 
-export enum ServerActionType {
-    START = 1,
-    STOP,
-    RESTART,
-    DELETE = 100 // This is a separate action, but it's easier to track with this enum
+// Game catalog types returned by GET /servers/games
+export interface GameCatalogType {
+    game_type: string;
+    image: string;
+    internal_port: number;
+    common_fields: Record<string, EnvironmentFieldSchema>;
+    fields: Record<string, EnvironmentFieldSchema>;
+}
+
+// Create server payload – the backend validates `environment` against the game's schema.
+// Empty values ('') fall back to the field's default.
+export interface CreateServerPayloadType {
+    game_type: string;
+    name: string;
+    environment: Record<string, EnvironmentValue>;
+}
+
+// 422 body returned by POST /servers/create when settings fail validation.
+export interface CreateServerValidationError {
+    msg: string;
+    fields: Record<string, string>;
 }
 
 // Response types
@@ -103,12 +130,10 @@ interface GetAllServerResType {
     msg: TopLevelServerType[];
 }
 
-
-// Request body types
-// Get all servers entry type
+// Server entry type (display in tables/modals)
 export interface TopLevelServerType {
     Created: string;
-    GameType: GameType;
+    GameType: string;
     ID: string;
     Image: string;
     Name: string;
@@ -118,52 +143,18 @@ export interface TopLevelServerType {
     }
 }
 
-// TODO fill out for detailed server
-export interface TopLevelServerType {
-    todo: string;
-}
-
-// Create server types
-interface BaseCreateServerType {
-    game_type: GameType,
+export interface BaseCreateServerType {
+    game_type: string;
     name: string
 }
 
+export enum ServerActionType {
+    START = 1,
+    STOP,
+    RESTART,
+    DELETE = 100
+}
 
 interface ServerActionRequestType {
     Action: ServerActionType
 }
-
-export interface CreateMinecraftType extends BaseCreateServerType {
-    environment: {
-        EULA: boolean;
-        MODE: 'survival' | 'creative' | 'adventure' | 'spectator';
-        SEED: string;
-        PVP: boolean;
-        HARDCORE: boolean;
-        ENABLE_COMMAND_BLOCK: boolean; 
-        MAX_PLAYERS: number;
-    },
-    ports: {
-        primary_port: number;
-    }
-}
-
-export interface CreatePalworldType extends BaseCreateServerType {
-    environment: {
-        SERVER_NAME: string;
-        SERVER_DESCRIPTION: string;
-        SERVER_PASSWORD: string;
-        ADMIN_PASSWORD: string;
-        DIFFICULTY: 'Casual' | 'Normal' | 'Hard';
-        EXP_RATE: number;
-        PAL_SPAWN: number;
-        COMMUNITY: boolean;
-        PLAYERS: number;
-    },
-    ports: {
-        primary_port: number;
-    }
-}
-
-export type CreateServerType = CreateMinecraftType | CreatePalworldType;
