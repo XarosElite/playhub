@@ -19,12 +19,13 @@ GAMES_YAML_PATH = Path(__file__).resolve().parent.parent / "games.yaml"
 with open(GAMES_YAML_PATH) as f:
     _RAW_GAMES = yaml.safe_load(f)
 
-GAME_REGISTRY: dict[str, dict] = {}
-for _gt, _gd in _RAW_GAMES.items():
-    GAME_REGISTRY[_gt] = _gd
+GLOBAL_COMMON_FIELDS: dict[str, dict] = _RAW_GAMES.get("common_fields", {})
+GAME_REGISTRY: dict[str, dict] = {
+    _gt: _gd for _gt, _gd in _RAW_GAMES.items() if _gt != "common_fields"
+}
 
 # ---------------------------------------------------------------------------
-# Port constants
+# Port constants (Automatic host port allocation range)
 # ---------------------------------------------------------------------------
 PORT_LOWER = 10000
 PORT_UPPER = 10250
@@ -74,7 +75,6 @@ async def load_game_validator(request: Request) -> DynamicGamePayload:
     if not server_name:
         raise HTTPException(status_code=422, detail="Server 'name' is required")
 
-    # Ensure ports is formatted correctly
     ports_data = body.get("ports", {})
     if isinstance(ports_data, int):
         ports_data = {"primary_port": ports_data}
@@ -109,7 +109,10 @@ def is_port_available_on_host(port: int) -> bool:
 
 
 def get_next_available_port(requested_port: Optional[int] = None, db = Depends(get_db)) -> int:
-    """Dynamically finds the next available port using PostgreSQL database records and host socket checks."""
+    """
+    Dynamically finds the next available port using PostgreSQL database records and host socket checks.
+    Defaults to automatically finding the next free port in the range 10000-10250.
+    """
     stmt = select(Server.port).where(Server.state != 'deleted')
     db_used_ports = set(db.scalars(stmt).all())
 

@@ -4,7 +4,13 @@ import asyncio
 import docker
 from typing import Annotated
 from fastapi import APIRouter, Body, Depends, HTTPException, WebSocket, WebSocketDisconnect
-from app.depenencies import r_queue, load_game_validator, get_next_available_port, GAME_REGISTRY
+from app.depenencies import (
+    r_queue,
+    load_game_validator,
+    get_next_available_port,
+    GAME_REGISTRY,
+    GLOBAL_COMMON_FIELDS,
+)
 from app.internal.config import GAME_CONFIGS
 from app.database import get_db
 from sqlalchemy import select, or_
@@ -66,12 +72,30 @@ def get_games():
     """
     games = []
     for game_type, game_def in GAME_REGISTRY.items():
+        # Resolve common fields from top-level definitions
+        resolved_common_fields = {}
+        raw_common = game_def.get("common_fields", [])
+        if isinstance(raw_common, list):
+            for field_name in raw_common:
+                if field_name in GLOBAL_COMMON_FIELDS:
+                    resolved_common_fields[field_name] = GLOBAL_COMMON_FIELDS[field_name]
+                else:
+                    resolved_common_fields[field_name] = {"type": "string", "default": ""}
+        elif isinstance(raw_common, dict):
+            resolved_common_fields = raw_common
+
+        # Game-specific fields are directly listed under 'fields'
+        raw_fields = game_def.get("fields") or game_def.get("environment", {}).get("fields", {})
+
+        internal_port = game_def.get("internal_port") or game_def.get("default_port", 0)
+
         games.append({
             "game_type": game_type,
             "image": game_def.get("image", ""),
-            "default_port": game_def.get("default_port", 0),
-            "environment": game_def.get("environment", {}),
-            "common_fields": game_def.get("environment", {}).get("common_fields", []),
+            "internal_port": internal_port,
+            "default_port": internal_port,
+            "common_fields": resolved_common_fields,
+            "fields": raw_fields,
             "docker_override": game_def.get("docker_override", {}),
         })
     return {"msg": games}
@@ -108,16 +132,19 @@ def delete_server(server_id: str, redis_queue: r_queue, db = Depends(get_db)):
 async def create_server(redis_queue: r_queue, payload = Depends(load_game_validator), db = Depends(get_db)):
     """
     Takes in a game config and spins up a docker container hosting the given game.
+    Host port is automatically allocated starting from 10000.
     """
     logging.info(f"Creating server payload: {payload}")
 
-    img = GAME_CONFIGS.get(payload.game_type, {}).get("image")
-    internal_port = GAME_CONFIGS.get(payload.game_type, {}).get("default_port")
+    game_cfg = GAME_CONFIGS.get(payload.game_type, {})
+    img = game_cfg.get("image")
+    internal_port = game_cfg.get("internal_port") or game_cfg.get("default_port")
     
     if not img or not internal_port:
         raise HTTPException(status_code=400, detail=f"Unsupported game_type: {payload.game_type}")
 
-    port = get_next_available_port(requested_port=payload.ports.primary_port, db=db)
+    # Automatically allocate host port (starting from 10000) - host port is not decided by user
+    port = get_next_available_port(requested_port=None, db=db)
 
     # Normalise environment to a dict (handle both Pydantic model and plain dict)
     env = payload.environment

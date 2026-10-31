@@ -40,7 +40,6 @@ function formatFieldLabel(key: string): string {
   if (key === 'EULA') return 'EULA';
   if (key === 'PVP') return 'PvP';
 
-  // Replace underscores with spaces, convert camel/snake case
   const spaced = key.replace(/_/g, ' ');
   return spaced
     .split(' ')
@@ -57,7 +56,6 @@ const ServerModal: React.FC<ServerModalProps> = ({ opened, closeHandler }) => {
   const [selectedGame, setSelectedGame] = useState<GameCatalogType | null>(null);
   const [serverName, setServerName] = useState<string>('');
   const [serverNameError, setServerNameError] = useState<string | null>(null);
-  const [primaryPort, setPrimaryPort] = useState<number>(0);
   const [envValues, setEnvValues] = useState<Record<string, any>>({});
   const [submitting, setSubmitting] = useState<boolean>(false);
 
@@ -81,7 +79,6 @@ const ServerModal: React.FC<ServerModalProps> = ({ opened, closeHandler }) => {
     setSelectedGame(null);
     setServerName('');
     setServerNameError(null);
-    setPrimaryPort(0);
     setEnvValues({});
     setSubmitting(false);
   };
@@ -100,14 +97,19 @@ const ServerModal: React.FC<ServerModalProps> = ({ opened, closeHandler }) => {
     setSelectedGame(game);
     setServerName('');
     setServerNameError(null);
-    setPrimaryPort(game?.default_port ?? 0);
 
-    // Initialize default environment values from game schema
+    // Initialize default environment values from both common_fields and fields
     const initialEnv: Record<string, any> = {};
-    const fields = game?.environment?.fields ?? {};
-    Object.entries(fields).forEach(([key, def]) => {
-      initialEnv[key] = def.default ?? '';
-    });
+    if (game?.common_fields) {
+      Object.entries(game.common_fields).forEach(([key, def]) => {
+        initialEnv[key] = def.default ?? '';
+      });
+    }
+    if (game?.fields) {
+      Object.entries(game.fields).forEach(([key, def]) => {
+        initialEnv[key] = def.default ?? '';
+      });
+    }
     setEnvValues(initialEnv);
   };
 
@@ -129,13 +131,11 @@ const ServerModal: React.FC<ServerModalProps> = ({ opened, closeHandler }) => {
     setServerNameError(null);
 
     setSubmitting(true);
+    // Host port is automatically assigned by backend (starting from 10000)
     const payload: CreateServerPayloadType = {
       game_type: selectedGame.game_type,
       name: serverName,
       environment: envValues,
-      ports: {
-        primary_port: Number(primaryPort || selectedGame.default_port),
-      },
     };
 
     GameServerApi.createServer(payload)
@@ -235,14 +235,10 @@ const ServerModal: React.FC<ServerModalProps> = ({ opened, closeHandler }) => {
     );
   };
 
-  // Derive common vs specific environment fields
-  const fields = selectedGame?.environment?.fields ?? {};
-  const commonList = selectedGame?.environment?.common_fields ?? selectedGame?.common_fields ?? [];
-  const isCommon = (k: string) => commonList.includes(k) || fields[k]?.common === true;
-
-  const allFieldKeys = Object.keys(fields);
-  const commonFieldKeys = allFieldKeys.filter(k => isCommon(k));
-  const specificFieldKeys = allFieldKeys.filter(k => !isCommon(k));
+  const hasCommonFields =
+    selectedGame?.common_fields && Object.keys(selectedGame.common_fields).length > 0;
+  const hasGameFields =
+    selectedGame?.fields && Object.keys(selectedGame.fields).length > 0;
 
   return (
     <AppModal opened={opened} closeHandler={handleClose} header="Add Server">
@@ -282,15 +278,9 @@ const ServerModal: React.FC<ServerModalProps> = ({ opened, closeHandler }) => {
                 setServerNameError(null);
               }}
             />
-            <NumberInput
-              withAsterisk
-              label="Host Port"
-              description="Assigned host port for container traffic"
-              value={primaryPort}
-              min={1024}
-              max={65535}
-              onChange={v => setPrimaryPort(typeof v === 'number' ? v : Number(v))}
-            />
+            <Text size="xs" c="dimmed">
+              Internal Container Port: {selectedGame.internal_port || selectedGame.default_port} (Host port automatically assigned starting from 10000)
+            </Text>
 
             {/* Customization Settings */}
             <Text size="lg" fw={600} mt="0.5rem">
@@ -298,19 +288,26 @@ const ServerModal: React.FC<ServerModalProps> = ({ opened, closeHandler }) => {
             </Text>
 
             {/* Common Settings Section */}
-            {commonFieldKeys.length > 0 && (
+            {hasCommonFields && (
               <Stack gap="0.6rem">
-                {commonFieldKeys.map(key => renderField(key, fields[key]))}
+                <Text size="sm" fw={600} c="dimmed">
+                  Common Settings
+                </Text>
+                {Object.entries(selectedGame.common_fields!).map(([key, def]) =>
+                  renderField(key, def)
+                )}
               </Stack>
             )}
 
             {/* Game-Specific Settings Section */}
-            {specificFieldKeys.length > 0 && (
+            {hasGameFields && (
               <Stack gap="0.6rem" mt="0.5rem">
                 <Text size="sm" fw={600} c="dimmed">
                   Game Specific Parameters
                 </Text>
-                {specificFieldKeys.map(key => renderField(key, fields[key]))}
+                {Object.entries(selectedGame.fields!).map(([key, def]) =>
+                  renderField(key, def)
+                )}
               </Stack>
             )}
 

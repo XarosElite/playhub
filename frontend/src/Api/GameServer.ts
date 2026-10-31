@@ -84,33 +84,28 @@ export interface EnvironmentFieldSchema {
     type?: string;
     default?: any;
     enum?: string[];
-    common?: boolean;
     min?: number;
     max?: number;
-}
-
-export interface EnvironmentSchema {
-    common_fields?: string[];
-    fields?: Record<string, EnvironmentFieldSchema>;
 }
 
 // Game catalog types returned by GET /servers/games
 export interface GameCatalogType {
     game_type: string;
     image: string;
+    internal_port?: number;
     default_port: number;
-    environment?: EnvironmentSchema;
-    common_fields?: string[];
+    common_fields?: Record<string, EnvironmentFieldSchema>;
+    fields?: Record<string, EnvironmentFieldSchema>;
     docker_override?: any;
 }
 
-// Generic create server payload – frontend sends game_type + name + environment dict + ports object.
+// Generic create server payload – frontend sends game_type + name + environment dict.
 export interface CreateServerPayloadType {
     game_type: string;
     name: string;
     environment: Record<string, any>;
-    ports: {
-        primary_port: number;
+    ports?: {
+        primary_port?: number;
     };
 }
 
