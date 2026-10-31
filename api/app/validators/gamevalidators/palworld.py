@@ -1,19 +1,21 @@
 from pydantic import BaseModel, Field
-from typing import Literal
+from typing import Literal, Optional
 
 
 class PalworldEnviromentValidator(BaseModel):
     """
-    A schema for validating required environment variables
+    A schema for validating Palworld required environment variables
     """
-    EULA: bool
-    MODE: Literal["survival", "creative", "adventure", "spectator"]
-    SEED: str
-    PVP: bool
-    HARDCORE: bool
-    ENABLE_COMMAND_BLOCK: bool
-    MAX_PLAYERS: int = Field(
-        ..., ge=1, le=100, description="Maximum number of players (1–100)"
+    SERVER_NAME: Optional[str] = ""
+    SERVER_DESCRIPTION: Optional[str] = ""
+    SERVER_PASSWORD: Optional[str] = ""
+    ADMIN_PASSWORD: Optional[str] = ""
+    DIFFICULTY: Optional[Literal["Casual", "Normal", "Hard"]] = "Normal"
+    EXP_RATE: Optional[float] = 1.0
+    PAL_SPAWN: Optional[float] = 1.0
+    COMMUNITY: Optional[bool] = False
+    PLAYERS: Optional[int] = Field(
+        default=32, ge=1, le=100, description="Maximum number of players (1–100)"
     )
 
 class PalworldPortValidator(BaseModel):
@@ -22,10 +24,10 @@ class PalworldPortValidator(BaseModel):
 
 class PalworldGameValidator(BaseModel):
     '''
-        A Schema for Validating the minecraft game type config
+    A Schema for Validating the palworld game type config
     '''
     name: str
-    # game_type: str
+    game_type: str
     environment: PalworldEnviromentValidator
     ports: PalworldPortValidator
 

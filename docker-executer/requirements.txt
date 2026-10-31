@@ -2,3 +2,5 @@ redis
 rq
 python-dotenv
 docker
+sqlalchemy
+psycopg2-binary

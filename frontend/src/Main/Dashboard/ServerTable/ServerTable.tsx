@@ -15,6 +15,16 @@ import ServerModal from "../ServerModal";
 import classes from './ServerTable.module.scss';
 
 
+const formatDate = (dateStr: string) => {
+    try {
+        const d = new Date(dateStr);
+        if (isNaN(d.getTime())) return dateStr || 'N/A';
+        return format(d, 'MM/dd/yy h:mm:ss a');
+    } catch {
+        return dateStr || 'N/A';
+    }
+};
+
 const ServerTable = () => {
     const systemInfoStore = useContext(SystemInfoContext);
     const [servers, setServers] = useState<TopLevelServerType[]>([]);
@@ -27,6 +37,7 @@ const ServerTable = () => {
 
         const interval = setInterval(() => {
             fetchServers();
+            console.log(servers)
         }, 5000);
 
         return () => clearInterval(interval);
@@ -150,7 +161,7 @@ const ServerTable = () => {
                                     <Stack>
                                         <Group gap={'0.25rem'} align="top">
                                             <Text fw={600} size="md">Created at:</Text>
-                                            <Text size="md">{format(record.Created, 'MM/dd/yy h:mm:ss a')}</Text>
+                                             <Text size="md">{formatDate(record.Created)}</Text>
                                         </Group>
                                         <Text size="md">{systemInfoStore.systemIP}:{record.Ports.primary_port}</Text>
                                     </Stack>
