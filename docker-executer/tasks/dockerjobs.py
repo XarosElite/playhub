@@ -1,23 +1,24 @@
-import docker
-import logging
 import os
+import logging
+import datetime
+import docker
 from sqlalchemy import create_engine, text
 
 client = docker.DockerClient(base_url=os.environ.get("DOCKER_HOST", "tcp://docker-proxy:2375"))
 logger = logging.getLogger("rq.worker")
 
-def get_db_engine():
-    user = os.environ.get("POSTGRES_USER", "playhuber")
-    password = os.environ.get("POSTGRES_PASSWORD", "Blayhub")
-    host = os.environ.get("POSTGRES_HOST", "db")
-    db_name = os.environ.get("POSTGRES_DB", "playhub")
-    url = f"postgresql+psycopg2://{user}:{password}@{host}/{db_name}"
-    return create_engine(url)
+user = os.environ.get("POSTGRES_USER", "playhuber")
+password = os.environ.get("POSTGRES_PASSWORD", "Blayhub")
+host = os.environ.get("POSTGRES_HOST", "db")
+db_port = os.environ.get("POSTGRES_PORT", "5432")
+db_name = os.environ.get("POSTGRES_DB", "playhub")
 
-def update_server_db(server_name, container_id=None, state=None, created=True):
+db_url = f"postgresql+psycopg2://{user}:{password}@{host}:{db_port}/{db_name}"
+db_engine = create_engine(db_url, pool_pre_ping=True)
+
+def update_server_db(server_name, container_id=None, state=None, created=None):
     try:
-        engine = get_db_engine()
-        with engine.connect() as conn:
+        with db_engine.connect() as conn:
             updates = []
             params = {"name": server_name}
             if container_id is not None:
@@ -28,7 +29,7 @@ def update_server_db(server_name, container_id=None, state=None, created=True):
                 params["state"] = state
             if created is not None:
                 updates.append("created = :created")
-                params["created"] = str(created)
+                params["created"] = created
             
             if updates:
                 sql = text(f"UPDATE servers SET {', '.join(updates)} WHERE name = :name")
@@ -47,11 +48,12 @@ def create_server(name, env, ports, img):
             pass
 
         container = client.containers.run(image=img, name=name, ports=ports, environment=env, detach=True)
-        update_server_db(name, container_id=container.id, state="running", created=True)
+        now_utc = datetime.datetime.now(datetime.timezone.utc)
+        update_server_db(name, container_id=container.id, state="running", created=now_utc)
         return "Finished"
     except Exception as e:
         logger.error(f"Failed to create server {name}: {e}")
-        update_server_db(name, state="failed", created=False)
+        update_server_db(name, state="failed")
         raise e
 
 def stop_server(name):

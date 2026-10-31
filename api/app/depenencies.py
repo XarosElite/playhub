@@ -1,18 +1,17 @@
-from fastapi import Depends, Request, HTTPException
-from typing import Annotated
+import socket
 import logging
+from typing import Annotated, Optional
+from fastapi import Depends, Request, HTTPException
 from redis import Redis
 from rq import Queue
-from queue import Queue as q
-from app.validators.gamevalidators import *
+from sqlalchemy import select
 
-async def common_parameters(q: str | None = None, skip: int = 0, limit: int = 100):
-    return {"q": q, "skip": skip, "limit": limit}
+from app.database import get_db
+from app.models.servers import Server
+from app.validators.gamevalidators import *
 
 def log_request(request: Request):
     logging.info(f"Custom Log Dep ---> Request to {request.url} from {request.client.host}")
-
-CommonDeps = Annotated[dict, Depends(common_parameters)]
 
 redis_conn = Redis(host='redis', port=6379, db=0)
 redis_queue = Queue("default", connection=redis_conn)
@@ -25,7 +24,7 @@ async def get_redis_queue() -> Queue:
 
 r_queue = Annotated[Queue, Depends(get_redis_queue)]
 
-async def load_game_validator(request:Request):
+async def load_game_validator(request: Request):
     body = await request.json()
     game_type = BaseGameValidator.model_validate(body).game_type
 
@@ -35,27 +34,36 @@ async def load_game_validator(request:Request):
         case "palworld":
             return PalworldGameValidator.model_validate(body)
         case _:
-            raise HTTPException(400, f"Unknown type '{game_type}'")
+            raise HTTPException(400, f"Unknown game type '{game_type}'")
 
+PORT_LOWER = 10000
+PORT_UPPER = 10250
 
-port_lower = 10000
-port_uppper = 10250
+def is_port_available_on_host(port: int) -> bool:
+    """
+    Checks if a port can be bound on the local interface.
+    """
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            s.bind(('0.0.0.0', port))
+            return True
+        except Exception:
+            return False
 
-free_ports = q(maxsize=port_uppper-port_lower)
-used_ports = []
+def get_next_available_port(requested_port: Optional[int] = None, db = Depends(get_db)) -> int:
+    """
+    Dynamically finds the next available port using PostgreSQL database records and host socket checks.
+    """
+    stmt = select(Server.port).where(Server.state != 'deleted')
+    db_used_ports = set(db.scalars(stmt).all())
 
-for i in range(port_uppper-port_lower):
-    free_ports.put(i)
+    if requested_port and requested_port not in db_used_ports:
+        if is_port_available_on_host(requested_port):
+            return requested_port
 
-def get_free_port():
-    port = free_ports.get()
-    used_ports.append(port)
-    return port_lower + port
+    for port in range(PORT_LOWER, PORT_UPPER + 1):
+        if port not in db_used_ports and is_port_available_on_host(port):
+            return port
 
-def free_port(port):
-    used_ports.remove(port)
-    free_ports.put(port)
-
-    
-
-
+    raise HTTPException(status_code=507, detail="No available server ports in the range 10000-10250")

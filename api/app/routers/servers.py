@@ -4,7 +4,7 @@ import asyncio
 import docker
 from typing import Annotated
 from fastapi import APIRouter, Body, Depends, HTTPException, WebSocket, WebSocketDisconnect
-from app.depenencies import r_queue, load_game_validator, get_free_port, free_port
+from app.depenencies import r_queue, load_game_validator, get_next_available_port
 from app.internal.config import GAME_CONFIGS
 from app.database import get_db
 from sqlalchemy import select, or_
@@ -23,11 +23,13 @@ def server_to_dict(serv):
     server_id = serv.container_id if serv.container_id else serv.name
 
     created_val = serv.created
-    if not created_val or created_val in ("False", "True"):
+    if isinstance(created_val, datetime.datetime):
+        created_val = created_val.isoformat()
+    elif not created_val or str(created_val) in ("False", "True"):
         created_val = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
     return {
-        "Created": created_val,
+        "Created": str(created_val),
         "GameType": serv.game_type,
         "ID": server_id,
         "Image": img,
@@ -84,7 +86,7 @@ def delete_server(server_id: str, redis_queue: r_queue, db = Depends(get_db)):
     return {"msg": {"job_id": job.id}}
 
 @router.post('/create', status_code=201)
-async def create_server(redis_queue: r_queue, payload = Depends(load_game_validator), port = Depends(get_free_port), db = Depends(get_db)):
+async def create_server(redis_queue: r_queue, payload = Depends(load_game_validator), db = Depends(get_db)):
     """
     Takes in a game config and spins up a docker container hosting the given game.
     """
@@ -96,15 +98,23 @@ async def create_server(redis_queue: r_queue, payload = Depends(load_game_valida
     if not img or not internal_port:
         raise HTTPException(status_code=400, detail=f"Unsupported game_type: {payload.game_type}")
 
+    port = get_next_available_port(requested_port=payload.ports.primary_port, db=db)
+
     job = redis_queue.enqueue("tasks.dockerjobs.create_server", payload.name,
                         payload.environment.model_dump(), {str(internal_port): str(port)},
                         img)
 
     # Add info to DB
-    created_time = datetime.datetime.now(datetime.timezone.utc).isoformat()
-    server = Server(created=created_time, game_type=payload.game_type, 
-                    container_id="", name=payload.name, state="starting",
-                    port=port)
+    now_utc = datetime.datetime.now(datetime.timezone.utc)
+    server = Server(
+        created=now_utc,
+        game_type=payload.game_type, 
+        container_id="",
+        name=payload.name,
+        state="starting",
+        port=port,
+        config=payload.environment.model_dump()
+    )
     db.add(server)
     db.commit()
 

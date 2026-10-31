@@ -1,10 +1,19 @@
+import os
 from sqlalchemy import create_engine
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import declarative_base, sessionmaker
 
-SQLALCHEMY_DATABASE_URL = "postgresql+psycopg2://playhuber:Blayhub@db/playhub"
+postgres_user = os.environ.get("POSTGRES_USER", "playhuber")
+postgres_password = os.environ.get("POSTGRES_PASSWORD", "Blayhub")
+postgres_host = os.environ.get("POSTGRES_HOST", "db")
+postgres_port = os.environ.get("POSTGRES_PORT", "5432")
+postgres_db = os.environ.get("POSTGRES_DB", "playhub")
 
-engine = create_engine(SQLALCHEMY_DATABASE_URL)
+SQLALCHEMY_DATABASE_URL = (
+    f"postgresql+psycopg2://{postgres_user}:{postgres_password}@"
+    f"{postgres_host}:{postgres_port}/{postgres_db}"
+)
+
+engine = create_engine(SQLALCHEMY_DATABASE_URL, pool_pre_ping=True)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
@@ -14,5 +23,3 @@ def get_db():
         yield db
     finally:
         db.close()
-
-

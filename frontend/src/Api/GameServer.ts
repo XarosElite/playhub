@@ -118,11 +118,6 @@ export interface TopLevelServerType {
     }
 }
 
-// TODO fill out for detailed server
-export interface TopLevelServerType {
-    todo: string;
-}
-
 // Create server types
 interface BaseCreateServerType {
     game_type: GameType,
