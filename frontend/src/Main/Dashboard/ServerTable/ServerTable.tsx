@@ -1,9 +1,9 @@
-import { useContext, useEffect, useState } from "react";
-import { Badge, Button, Group, Loader, Stack, Switch, Text, Tooltip } from "@mantine/core"
+import { useCallback, useContext, useEffect, useState } from "react";
+import { Avatar, Badge, Button, Group, Loader, Stack, Switch, Text, Tooltip } from "@mantine/core"
 import { notifications } from "@mantine/notifications";
 import { modals } from "@mantine/modals";
 import { useDisclosure } from "@mantine/hooks";
-import { IconRestore, IconServer, IconTrash } from "@tabler/icons-react";
+import { IconRestore, IconServer, IconShare, IconTrash, IconUsers } from "@tabler/icons-react";
 import { DataTable } from 'mantine-datatable';
 import { format } from "date-fns";
 
@@ -12,6 +12,8 @@ import { SystemInfoContext } from "../../../Store/SystemInfoStore";
 import { gameIconFact } from "../../../Shared/Util";
 import ServerModal from "../ServerModal";
 import ServerTerminal from "../ServerTerminal";
+import ShareModal from "../ShareModal";
+import { displayUserName } from "../../../Api/Users";
 
 import classes from './ServerTable.module.scss';
 
@@ -32,6 +34,8 @@ const ServerTable = () => {
     const [addGameOpened, addGameHandlers] = useDisclosure(false);
     const [initialLoad, setInitialLoad] = useState<boolean>(true);
     const [modifyingServers, setModifyingServers] = useState<string[]>([]);
+    const [shareTarget, setShareTarget] = useState<TopLevelServerType | null>(null);
+    const closeShareModal = useCallback(() => setShareTarget(null), []);
 
     useEffect(() => {
         fetchServers();
@@ -97,6 +101,7 @@ const ServerTable = () => {
     return (
         <>
             <ServerModal closeHandler={addGameHandlers.close} opened={addGameOpened} />
+            <ShareModal server={shareTarget} onClose={closeShareModal} onSaved={fetchServers} />
                 <Group>
                     <Button
                         onClick={addGameHandlers.open}
@@ -122,6 +127,18 @@ const ServerTable = () => {
                             render: (record) => (
                                 <Group gap={'0.5rem'} align="center">
                                     {record.Name}
+                                    {!record.IsOwner &&
+                                        <Tooltip label={`Shared with you by ${displayUserName(record.Owner)}`}>
+                                            <Badge variant="light" color="blue" size="sm">Shared</Badge>
+                                        </Tooltip>
+                                    }
+                                    {record.IsOwner && !!record.SharedWith?.length &&
+                                        <Tooltip label={`Shared with ${record.SharedWith.map(displayUserName).join(', ')}`}>
+                                            <Badge variant="light" color="gray" size="sm" leftSection={<IconUsers size={12} />}>
+                                                {record.SharedWith.length}
+                                            </Badge>
+                                        </Tooltip>
+                                    }
                                     {modifyingServers.find(s => s === record.ID) &&
                                         <Tooltip label="This server has an action pending" >
                                             <Badge className={classes.pendingActionIndicator} w="0.5rem" color={'yellow.4'}/>
@@ -165,6 +182,15 @@ const ServerTable = () => {
                                                 <Text size="md">{formatDate(record.Created)}</Text>
                                             </Group>
                                             <Text size="md">{systemInfoStore.systemIP}:{record.Ports.primary_port}</Text>
+                                            {!record.IsOwner &&
+                                                <Group gap="xs">
+                                                    <Text fw={600} size="md">Owner:</Text>
+                                                    <Avatar src={record.Owner.picture} radius="xl" size="sm" color="green">
+                                                        {displayUserName(record.Owner).charAt(0).toUpperCase()}
+                                                    </Avatar>
+                                                    <Text size="md">{displayUserName(record.Owner)}</Text>
+                                                </Group>
+                                            }
                                         </Stack>
                                         
                                         {pendingAction ?
@@ -182,13 +208,22 @@ const ServerTable = () => {
                                                 >
                                                     Restart
                                                 </Button>
-                                                <Button
-                                                    color='red' variant="outline"
-                                                    onClick={() => openDeleteConfirm(record)}
-                                                    rightSection={<IconTrash/>}
-                                                >
-                                                    Delete
-                                                </Button>
+                                                {record.IsOwner && <>
+                                                    <Button
+                                                        variant="outline"
+                                                        onClick={() => setShareTarget(record)}
+                                                        rightSection={<IconShare/>}
+                                                    >
+                                                        Share
+                                                    </Button>
+                                                    <Button
+                                                        color='red' variant="outline"
+                                                        onClick={() => openDeleteConfirm(record)}
+                                                        rightSection={<IconTrash/>}
+                                                    >
+                                                        Delete
+                                                    </Button>
+                                                </>}
                                                 <Switch
                                                     checked={isRunning}
                                                     size="md"

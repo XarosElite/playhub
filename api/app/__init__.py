@@ -9,7 +9,8 @@ from fastapi.responses import JSONResponse
 from app.routers import all_routers
 from app.internal import setup_logger
 from app.internal.auth import log_auth_config
-from app.models.servers import Server
+from app.models.servers import Server, ServerShare  # noqa: F401 – registers tables
+from app.models.users import User  # noqa: F401 – registers tables
 from app.database import Base, engine
 from sqlalchemy.exc import OperationalError
 

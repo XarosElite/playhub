@@ -1,5 +1,6 @@
 import api from "./Config/AxiosConfig";
 import { waitForJobExit } from "./Job";
+import { UserSummaryType } from "./Users";
 
 /**
  * System information APIs
@@ -53,6 +54,30 @@ export const GameServerApi = {
             url: `/servers/${encodeURIComponent(serverId)}`,
             method: "DELETE"
         });
+    },
+    /**
+     * Lists the users a server is shared with. Owner only.
+     */
+    getShares: async function (serverId: string): Promise<UserSummaryType[]> {
+        const response = await api.request({
+            url: `/servers/${encodeURIComponent(serverId)}/shares`,
+            method: "GET",
+        });
+
+        return response.data.msg;
+    },
+    /**
+     * Replaces the set of users a server is shared with. Owner only.
+     * @returns the users it is now shared with
+     */
+    setShares: async function (serverId: string, userIds: string[]): Promise<UserSummaryType[]> {
+        const response = await api.request({
+            url: `/servers/${encodeURIComponent(serverId)}/shares`,
+            method: "PUT",
+            data: { user_ids: userIds },
+        });
+
+        return response.data.msg;
     },
     makeServerAction: async function (serverId: string, action: ServerActionType): Promise<boolean> {
         const payload: ServerActionRequestType = {
@@ -140,7 +165,12 @@ export interface TopLevelServerType {
     State: 'created' | 'exited' | 'running';
     Ports: {
         primary_port: number;
-    }
+    };
+    // Whether the signed-in user created this server (otherwise it was shared with them).
+    IsOwner: boolean;
+    Owner: UserSummaryType;
+    // Users the server is shared with; only provided to the owner.
+    SharedWith: UserSummaryType[] | null;
 }
 
 export interface BaseCreateServerType {

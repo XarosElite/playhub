@@ -14,7 +14,9 @@ from app.internal.config import GAMES, public_game
 from app.internal.auth import CurrentUser, authenticate_websocket
 from app.database import get_db, SessionLocal
 from sqlalchemy import select, or_
-from app.models.servers import Server
+from app.models.servers import Server, ServerShare
+from app.models.users import User, user_to_dict
+from pydantic import BaseModel
 import logging
 
 router = APIRouter(
@@ -24,7 +26,11 @@ router = APIRouter(
     responses={404: {"description": "Not found"}},
 )
 
-def server_to_dict(serv):
+def server_to_dict(serv, viewer_uid: str, owner=None, shared_with=None):
+    """
+    Serialises a server for the given viewer. ``shared_with`` (the users it is
+    shared with) is only included for the owner.
+    """
     img = GAMES.get(serv.game_type, {}).get("image", "unknown") if serv.game_type else "unknown"
     server_id = serv.container_id if serv.container_id else serv.name
 
@@ -34,6 +40,7 @@ def server_to_dict(serv):
     elif not created_val or str(created_val) in ("False", "True"):
         created_val = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
+    is_owner = serv.owner_id == viewer_uid
     return {
         "Created": str(created_val),
         "GameType": serv.game_type,
@@ -41,13 +48,46 @@ def server_to_dict(serv):
         "Image": img,
         "Name": serv.name,
         "State": serv.state or "running",
-        "Ports": {"primary_port": serv.port}
+        "Ports": {"primary_port": serv.port},
+        "IsOwner": is_owner,
+        "Owner": user_to_dict(owner) if owner else {"uid": serv.owner_id, "name": None, "email": None, "picture": None},
+        "SharedWith": [user_to_dict(u) for u in (shared_with or [])] if is_owner else None,
     }
 
-def find_server(db, server_id: str, owner_id: str):
-    """Finds a server owned by the given user by container id, name, or DB id."""
+def serialize_servers(db, servers, viewer_uid: str):
+    """Serialises servers with their owners and (for the viewer's own servers) shares, in two queries."""
+    owner_ids = {s.owner_id for s in servers if s.owner_id}
+    owners = {u.uid: u for u in db.scalars(select(User).where(User.uid.in_(owner_ids)))} if owner_ids else {}
+
+    owned_ids = [s.id for s in servers if s.owner_id == viewer_uid]
+    shares: dict[int, list] = {}
+    if owned_ids:
+        rows = db.execute(
+            select(ServerShare.server_id, User)
+            .join(User, User.uid == ServerShare.user_uid)
+            .where(ServerShare.server_id.in_(owned_ids))
+            .order_by(User.name, User.email)
+        ).all()
+        for server_id, shared_user in rows:
+            shares.setdefault(server_id, []).append(shared_user)
+
+    return [
+        server_to_dict(s, viewer_uid, owners.get(s.owner_id), shares.get(s.id))
+        for s in servers
+    ]
+
+def can_access(uid: str):
+    """SQL condition: the user owns the server or it has been shared with them."""
+    return or_(
+        Server.owner_id == uid,
+        Server.id.in_(select(ServerShare.server_id).where(ServerShare.user_uid == uid)),
+    )
+
+def find_server(db, server_id: str, uid: str):
+    """Finds a server the user can access (owned or shared) by container id, name, or DB id."""
     stmt = select(Server).where(
-        Server.owner_id == owner_id,
+        can_access(uid),
+        Server.state != "deleted",
         or_(
             Server.container_id == server_id,
             Server.name == server_id,
@@ -56,25 +96,32 @@ def find_server(db, server_id: str, owner_id: str):
     )
     return db.scalars(stmt).first()
 
-def get_owned_server(db, server_id: str, owner_id: str):
-    server = find_server(db, server_id, owner_id)
-    if not server or server.state == "deleted":
+def get_accessible_server(db, server_id: str, uid: str):
+    """A server the user owns or that is shared with them, or 404."""
+    server = find_server(db, server_id, uid)
+    if not server:
         raise HTTPException(status_code=404, detail=f"Server {server_id} not found")
     return server
 
+def get_owned_server(db, server_id: str, uid: str, action: str):
+    """A server the user owns. 404 if they can't see it, 403 if it's only shared with them."""
+    server = get_accessible_server(db, server_id, uid)
+    if server.owner_id != uid:
+        raise HTTPException(status_code=403, detail=f"Only the server's owner can {action}")
+    return server
+
 def enqueue_for(redis_queue, user, func: str, *args):
-    """Enqueue a job tagged with its owner so only they can poll its status."""
+    """Enqueue a job tagged with the requesting user so only they can poll its status."""
     return redis_queue.enqueue(func, *args, meta={"owner_id": user.uid})
 
 @router.get('/')
 def get_servers(user: CurrentUser, db = Depends(get_db)):
     """
-    Gets a list of the signed-in user's active servers.
+    Gets the servers the signed-in user owns or that have been shared with them.
     """
-    stmt = select(Server).where(Server.state != "deleted", Server.owner_id == user.uid)
+    stmt = select(Server).where(Server.state != "deleted", can_access(user.uid)).order_by(Server.created)
     results = db.scalars(stmt).all()
-    results_dict = [server_to_dict(serv) for serv in results]
-    return {"msg": results_dict}
+    return {"msg": serialize_servers(db, results, user.uid)}
 
 
 @router.get('/games')
@@ -91,14 +138,15 @@ def get_server(server_id: str, user: CurrentUser, db = Depends(get_db)):
     """
     Gets Information about a given server.
     """
-    return {"msg": server_to_dict(get_owned_server(db, server_id, user.uid))}
+    server = get_accessible_server(db, server_id, user.uid)
+    return {"msg": serialize_servers(db, [server], user.uid)[0]}
 
 @router.delete('/{server_id}')
 def delete_server(server_id: str, user: CurrentUser, redis_queue: r_queue, db = Depends(get_db)):
     """
-    Deletes one of the signed-in user's servers by container id or name.
+    Deletes one of the signed-in user's servers by container id or name. Owner only.
     """
-    server = get_owned_server(db, server_id, user.uid)
+    server = get_owned_server(db, server_id, user.uid, "delete it")
     job = enqueue_for(redis_queue, user, "tasks.dockerjobs.delete_server", server.name)
     server.state = "deleted"
     db.commit()
@@ -144,10 +192,13 @@ async def create_server(user: CurrentUser, redis_queue: r_queue, payload: Create
 @router.post('/{server_id}')
 def run_action(server_id: str, user: CurrentUser, redis_queue: r_queue, body: dict = Body(...), db = Depends(get_db)):
     """
-    Takes in an action config and runs the action on one of the signed-in user's containers.
+    Takes in an action config and runs the action on a container the user owns or
+    that has been shared with them. Deleting is owner only.
     """
     action = body.get("Action")
-    server = get_owned_server(db, server_id, user.uid)
+    server = get_accessible_server(db, server_id, user.uid)
+    if action == 100 and server.owner_id != user.uid:
+        raise HTTPException(status_code=403, detail="Only the server's owner can delete it")
     target_name = server.name
 
     job = None
@@ -171,6 +222,61 @@ def run_action(server_id: str, user: CurrentUser, redis_queue: r_queue, body: di
     return {"msg": {"job_id": job.id}}
 
 
+class ShareUpdateRequest(BaseModel):
+    user_ids: list[str]
+
+
+def get_shared_users(db, server):
+    stmt = (
+        select(User)
+        .join(ServerShare, ServerShare.user_uid == User.uid)
+        .where(ServerShare.server_id == server.id)
+        .order_by(User.name, User.email)
+    )
+    return [user_to_dict(u) for u in db.scalars(stmt)]
+
+
+@router.get('/{server_id}/shares')
+def get_shares(server_id: str, user: CurrentUser, db = Depends(get_db)):
+    """
+    Lists the users a server is shared with. Owner only.
+    """
+    server = get_owned_server(db, server_id, user.uid, "manage sharing")
+    return {"msg": get_shared_users(db, server)}
+
+
+@router.put('/{server_id}/shares')
+def set_shares(server_id: str, body: ShareUpdateRequest, user: CurrentUser, db = Depends(get_db)):
+    """
+    Replaces the set of users a server is shared with. Owner only.
+    Shared users can view and control the server but not delete it or change sharing.
+    """
+    server = get_owned_server(db, server_id, user.uid, "manage sharing")
+
+    wanted = set(body.user_ids)
+    if server.owner_id in wanted:
+        raise HTTPException(status_code=400, detail="You can't share a server with yourself")
+    if wanted:
+        known = set(db.scalars(select(User.uid).where(User.uid.in_(wanted))))
+        unknown = wanted - known
+        if unknown:
+            raise HTTPException(status_code=400, detail=f"Unknown user(s): {', '.join(sorted(unknown))}")
+
+    current = {
+        share.user_uid: share
+        for share in db.scalars(select(ServerShare).where(ServerShare.server_id == server.id))
+    }
+    for uid, share in current.items():
+        if uid not in wanted:
+            db.delete(share)
+    for uid in wanted - current.keys():
+        db.add(ServerShare(server_id=server.id, user_uid=uid, granted_by=user.uid))
+    db.commit()
+
+    logging.info(f"Server '{server.name}' is now shared with {len(wanted)} user(s)")
+    return {"msg": get_shared_users(db, server)}
+
+
 @router.websocket('/{server_id}/terminal')
 async def server_terminal_websocket(websocket: WebSocket, server_id: str):
     await websocket.accept()
@@ -181,7 +287,7 @@ async def server_terminal_websocket(websocket: WebSocket, server_id: str):
     # Short-lived session: don't hold a DB connection for the life of the terminal.
     with SessionLocal() as db:
         server = find_server(db, server_id, user.uid)
-    if not server or server.state == "deleted":
+    if not server:
         await websocket.send_text(f"\r\n\033[31mServer {server_id} not found\033[0m\r\n")
         await websocket.close()
         return
