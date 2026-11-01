@@ -1,0 +1,30 @@
+.page {
+    position: relative;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--mantine-spacing-md);
+    background:
+        radial-gradient(
+            ellipse at top,
+            light-dark(var(--mantine-color-green-1), rgba(47, 158, 68, 0.18)),
+            transparent 60%
+        ),
+        light-dark(var(--mantine-color-gray-0), var(--mantine-color-dark-8));
+}
+
+.card {
+    width: 100%;
+    max-width: 24rem;
+}
+
+.logo {
+    width: 12rem;
+}
+
+.themeToggle {
+    position: absolute;
+    top: var(--mantine-spacing-md);
+    right: var(--mantine-spacing-md);
+}

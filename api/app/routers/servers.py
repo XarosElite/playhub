@@ -11,7 +11,8 @@ from app.depenencies import (
     CreateServerPayload,
 )
 from app.internal.config import GAMES, public_game
-from app.database import get_db
+from app.internal.auth import CurrentUser, authenticate_websocket
+from app.database import get_db, SessionLocal
 from sqlalchemy import select, or_
 from app.models.servers import Server
 import logging
@@ -43,8 +44,10 @@ def server_to_dict(serv):
         "Ports": {"primary_port": serv.port}
     }
 
-def find_server(db, server_id: str):
+def find_server(db, server_id: str, owner_id: str):
+    """Finds a server owned by the given user by container id, name, or DB id."""
     stmt = select(Server).where(
+        Server.owner_id == owner_id,
         or_(
             Server.container_id == server_id,
             Server.name == server_id,
@@ -53,19 +56,29 @@ def find_server(db, server_id: str):
     )
     return db.scalars(stmt).first()
 
+def get_owned_server(db, server_id: str, owner_id: str):
+    server = find_server(db, server_id, owner_id)
+    if not server or server.state == "deleted":
+        raise HTTPException(status_code=404, detail=f"Server {server_id} not found")
+    return server
+
+def enqueue_for(redis_queue, user, func: str, *args):
+    """Enqueue a job tagged with its owner so only they can poll its status."""
+    return redis_queue.enqueue(func, *args, meta={"owner_id": user.uid})
+
 @router.get('/')
-def get_servers(db = Depends(get_db)):
+def get_servers(user: CurrentUser, db = Depends(get_db)):
     """
-    Gets a list of all active servers.
+    Gets a list of the signed-in user's active servers.
     """
-    stmt = select(Server).where(Server.state != "deleted")
+    stmt = select(Server).where(Server.state != "deleted", Server.owner_id == user.uid)
     results = db.scalars(stmt).all()
     results_dict = [server_to_dict(serv) for serv in results]
     return {"msg": results_dict}
 
 
 @router.get('/games')
-def get_games():
+def get_games(user: CurrentUser):
     """
     Gets the list of supported game types with their configuration.
     """
@@ -74,34 +87,25 @@ def get_games():
 
 
 @router.get('/{server_id}')
-def get_server(server_id: str, db = Depends(get_db)):
+def get_server(server_id: str, user: CurrentUser, db = Depends(get_db)):
     """
     Gets Information about a given server.
     """
-    server = find_server(db, server_id)
-    if not server:
-        raise HTTPException(status_code=404, detail=f"Server {server_id} not found")
-    return {"msg": server_to_dict(server)}
+    return {"msg": server_to_dict(get_owned_server(db, server_id, user.uid))}
 
 @router.delete('/{server_id}')
-def delete_server(server_id: str, redis_queue: r_queue, db = Depends(get_db)):
+def delete_server(server_id: str, user: CurrentUser, redis_queue: r_queue, db = Depends(get_db)):
     """
-    Deletes a given docker container by id or name.
+    Deletes one of the signed-in user's servers by container id or name.
     """
-    server = find_server(db, server_id)
-    if not server:
-        # Fallback if server ID is passed directly
-        job = redis_queue.enqueue("tasks.dockerjobs.delete_server", server_id)
-        return {"msg": {"job_id": job.id}}
-    
-    name = server.name
-    job = redis_queue.enqueue("tasks.dockerjobs.delete_server", name)
+    server = get_owned_server(db, server_id, user.uid)
+    job = enqueue_for(redis_queue, user, "tasks.dockerjobs.delete_server", server.name)
     server.state = "deleted"
     db.commit()
     return {"msg": {"job_id": job.id}}
 
 @router.post('/create', status_code=201)
-async def create_server(redis_queue: r_queue, payload: CreateServerPayload = Depends(load_game_validator), db = Depends(get_db)):
+async def create_server(user: CurrentUser, redis_queue: r_queue, payload: CreateServerPayload = Depends(load_game_validator), db = Depends(get_db)):
     """
     Takes in a game config and spins up a docker container hosting the given game.
     The environment is validated against the game's schema in games.yaml.
@@ -116,7 +120,7 @@ async def create_server(redis_queue: r_queue, payload: CreateServerPayload = Dep
     # Automatically allocate host port (starting from 10000) - host port is not decided by user
     port = get_next_available_port(requested_port=None, db=db)
 
-    job = redis_queue.enqueue("tasks.dockerjobs.create_server", payload.name,
+    job = enqueue_for(redis_queue, user, "tasks.dockerjobs.create_server", payload.name,
                         payload.container_env, {str(internal_port): str(port)},
                         img)
 
@@ -129,6 +133,7 @@ async def create_server(redis_queue: r_queue, payload: CreateServerPayload = Dep
         name=payload.name,
         state="starting",
         port=port,
+        owner_id=user.uid,
         config=payload.settings
     )
     db.add(server)
@@ -137,36 +142,31 @@ async def create_server(redis_queue: r_queue, payload: CreateServerPayload = Dep
     return {"msg": {"job_id": job.id}}
 
 @router.post('/{server_id}')
-def run_action(server_id: str, redis_queue: r_queue, body: dict = Body(...), db = Depends(get_db)):
+def run_action(server_id: str, user: CurrentUser, redis_queue: r_queue, body: dict = Body(...), db = Depends(get_db)):
     """
-    Takes in an action config and runs the action on the corresponding container.
+    Takes in an action config and runs the action on one of the signed-in user's containers.
     """
     action = body.get("Action")
-    server = find_server(db, server_id)
-    target_name = server.name if server else server_id
+    server = get_owned_server(db, server_id, user.uid)
+    target_name = server.name
 
     job = None
     if action == 1:  # START
-        job = redis_queue.enqueue("tasks.dockerjobs.start_server", target_name)
-        if server:
-            server.state = "running"
+        job = enqueue_for(redis_queue, user, "tasks.dockerjobs.start_server", target_name)
+        server.state = "running"
     elif action == 2:  # STOP
-        job = redis_queue.enqueue("tasks.dockerjobs.stop_server", target_name)
-        if server:
-            server.state = "exited"
+        job = enqueue_for(redis_queue, user, "tasks.dockerjobs.stop_server", target_name)
+        server.state = "exited"
     elif action == 3:  # RESTART
-        job = redis_queue.enqueue("tasks.dockerjobs.restart_server", target_name)
-        if server:
-            server.state = "running"
+        job = enqueue_for(redis_queue, user, "tasks.dockerjobs.restart_server", target_name)
+        server.state = "running"
     elif action == 100:  # DELETE
-        job = redis_queue.enqueue("tasks.dockerjobs.delete_server", target_name)
-        if server:
-            server.state = "deleted"
+        job = enqueue_for(redis_queue, user, "tasks.dockerjobs.delete_server", target_name)
+        server.state = "deleted"
     else:
         raise HTTPException(status_code=400, detail=f"Invalid Action: {action}")
 
-    if server:
-        db.commit()
+    db.commit()
 
     return {"msg": {"job_id": job.id}}
 
@@ -174,6 +174,17 @@ def run_action(server_id: str, redis_queue: r_queue, body: dict = Body(...), db 
 @router.websocket('/{server_id}/terminal')
 async def server_terminal_websocket(websocket: WebSocket, server_id: str):
     await websocket.accept()
+
+    user = await authenticate_websocket(websocket)
+    if user is None:
+        return
+    # Short-lived session: don't hold a DB connection for the life of the terminal.
+    with SessionLocal() as db:
+        server = find_server(db, server_id, user.uid)
+    if not server or server.state == "deleted":
+        await websocket.send_text(f"\r\n\033[31mServer {server_id} not found\033[0m\r\n")
+        await websocket.close()
+        return
 
     docker_host = os.environ.get("DOCKER_HOST", "tcp://docker-proxy:2375")
     try:
@@ -183,7 +194,7 @@ async def server_terminal_websocket(websocket: WebSocket, server_id: str):
         await websocket.close()
         return
 
-    target = server_id
+    target = server.container_id or server.name
     exec_cmd = ["/bin/sh"]
     try:
         exec_inst = docker_client.api.exec_create(

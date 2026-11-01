@@ -2,11 +2,14 @@ import datetime
 import socket
 import psutil
 import requests
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
+
+from app.internal.auth import get_current_user
 
 router = APIRouter(
     prefix="/sys",
     tags=["system"],
+    dependencies=[Depends(get_current_user)],
     responses={404: {"description": "Not found"}},
 )
 

@@ -4,6 +4,8 @@ import { IconMaximize, IconMinimize, IconTrash, IconTerminal } from "@tabler/ico
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 
+import { getIdToken } from "../../../Auth/firebase";
+
 import "@xterm/xterm/css/xterm.css";
 import classes from "./ServerTerminal.module.scss";
 
@@ -50,8 +52,19 @@ const ServerTerminal: React.FC<ServerTerminalProps> = ({ serverId, serverName })
 
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
+    // Keystrokes are only forwarded once the auth token has been sent.
+    let authenticated = false;
 
-    ws.onopen = () => {
+    ws.onopen = async () => {
+      // Browsers can't set headers on websockets, so the API expects the
+      // Firebase ID token as the first message.
+      const token = await getIdToken();
+      if (!token || ws.readyState !== WebSocket.OPEN) {
+        ws.close();
+        return;
+      }
+      ws.send(token);
+      authenticated = true;
       setConnected(true);
       term.writeln("\x1b[32mConnected to container session. Spawning interactive shell...\x1b[0m\r\n");
     };
@@ -65,13 +78,16 @@ const ServerTerminal: React.FC<ServerTerminalProps> = ({ serverId, serverName })
       setConnected(false);
     };
 
-    ws.onclose = () => {
+    ws.onclose = (event) => {
+      if (event.code === 4401) {
+        term.writeln("\r\n\x1b[31m[Not authorized – sign in again]\x1b[0m");
+      }
       term.writeln("\r\n\x1b[33m[Terminal session closed]\x1b[0m");
       setConnected(false);
     };
 
     const dataListener = term.onData((data) => {
-      if (ws.readyState === WebSocket.OPEN) {
+      if (authenticated && ws.readyState === WebSocket.OPEN) {
         ws.send(data);
       }
     });
@@ -79,7 +95,7 @@ const ServerTerminal: React.FC<ServerTerminalProps> = ({ serverId, serverName })
     const handleResize = () => {
       try {
         fitAddon.fit();
-      } catch (err) {
+      } catch {
         // ignore fit resize edge errors
       }
     };

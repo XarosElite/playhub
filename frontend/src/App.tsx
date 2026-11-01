@@ -14,9 +14,11 @@ import '@mantine/notifications/styles.css';
 import Main from './Main';
 import Login from './Login';
 import NotFound from './NotFound';
+import RequireAuth from './Auth/RequireAuth';
 
 // Stores
 import { systemInfoStore } from './Store/SystemInfoStore';
+import { authStore } from './Store/AuthStore';
 
 import './App.css'
 
@@ -30,11 +32,11 @@ function App() {
     <MantineProvider defaultColorScheme='dark' theme={theme}>
       <Notifications />
       <ModalsProvider>
-        <Provider systemInfo={systemInfoStore}>
+        <Provider systemInfo={systemInfoStore} auth={authStore}>
           <BrowserRouter>
             <Routes>
               <Route path='/login' element={<Login/>}></Route>
-              <Route path='/*' element={<Main/>}>
+              <Route path='/*' element={<RequireAuth><Main/></RequireAuth>}>
               </Route>
               <Route path="*" element={<NotFound/>} />
             </Routes>

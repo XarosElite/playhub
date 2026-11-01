@@ -1,6 +1,7 @@
 import { Link, Outlet, Route, Routes, useLocation } from "react-router-dom";
-import { ActionIcon, AppShell, Burger, Group, Image, NavLink, Tooltip, useMantineColorScheme } from "@mantine/core";
-import { IconHome2, IconMoon, IconSettings, IconSun } from "@tabler/icons-react";
+import { ActionIcon, AppShell, Avatar, Burger, Group, Image, Menu, NavLink, Text, Tooltip, UnstyledButton, useMantineColorScheme } from "@mantine/core";
+import { IconChevronDown, IconHome2, IconLogout, IconMoon, IconSettings, IconSun } from "@tabler/icons-react";
+import { observer } from "mobx-react";
 import { useDisclosure } from "@mantine/hooks";
 
 import Settings from "./Settings";
@@ -13,13 +14,14 @@ import classes from './Main.module.scss';
 import NotFound from "../NotFound";
 import { useContext, useEffect } from "react";
 import { SystemInfoContext } from "../Store/SystemInfoStore";
+import { AuthContext } from "../Store/AuthStore";
   
 const navLinks = [
   { id: 'dashboard', icon: IconHome2, label: 'Dashboard', link: '/' },
   { id: 'settings', icon: IconSettings, label: 'Settings', link: '/settings' },
 ];
 
-const Main = () => {
+const Main = observer(() => {
     // used for controlling panel
     const [mobileOpened, { toggle: toggleMobile }] = useDisclosure();
     const [desktopOpened, { toggle: toggleDesktop }] = useDisclosure(true);
@@ -32,6 +34,9 @@ const Main = () => {
     const currentPath = useLocation()?.pathname;
 
     const systemInfoStore = useContext(SystemInfoContext);
+    const authStore = useContext(AuthContext);
+    const user = authStore.user;
+    const displayName = user?.displayName || user?.email || "Account";
     
     // Navbar links
     const links = navLinks.map((item) => (
@@ -65,10 +70,33 @@ const Main = () => {
             padding="md"
         >
         <AppShell.Header>
-          <Group h="100%" p='sm'>
-            <Burger opened={mobileOpened} onClick={toggleMobile} hiddenFrom="md" size="md" />
-            <Burger opened={desktopOpened} onClick={toggleDesktop} visibleFrom="md" size="md" />
-            <Image src={darkMode ? bannerDark : bannerLight} className={classes.logo}/>
+          <Group h="100%" p='sm' justify="space-between" wrap="nowrap">
+            <Group wrap="nowrap">
+              <Burger opened={mobileOpened} onClick={toggleMobile} hiddenFrom="md" size="md" />
+              <Burger opened={desktopOpened} onClick={toggleDesktop} visibleFrom="md" size="md" />
+              <Image src={darkMode ? bannerDark : bannerLight} className={classes.logo}/>
+            </Group>
+            <Menu position="bottom-end" shadow="md" width={240}>
+              <Menu.Target>
+                <UnstyledButton className={classes.userButton} aria-label="Account menu">
+                  <Group gap="xs" wrap="nowrap">
+                    <Avatar src={user?.photoURL} alt={displayName} radius="xl" size="sm" color="green">
+                      {displayName.charAt(0).toUpperCase()}
+                    </Avatar>
+                    <Text size="sm" fw={600} visibleFrom="sm" truncate maw="12rem">{displayName}</Text>
+                    <IconChevronDown size={14} stroke={1.5} />
+                  </Group>
+                </UnstyledButton>
+              </Menu.Target>
+              <Menu.Dropdown>
+                <Menu.Label>Signed in as</Menu.Label>
+                <Text size="sm" px="sm" pb="xs" truncate>{user?.email}</Text>
+                <Menu.Divider />
+                <Menu.Item leftSection={<IconLogout size={16} stroke={1.5} />} onClick={authStore.signOut}>
+                  Sign out
+                </Menu.Item>
+              </Menu.Dropdown>
+            </Menu>
           </Group>
         </AppShell.Header>
         <AppShell.Navbar pt='lg' className={classes.navbar}>
@@ -99,6 +127,6 @@ const Main = () => {
         </AppShell.Main>
       </AppShell>
     )
-};
+});
 
 export default Main;

@@ -1,5 +1,6 @@
 from fastapi import APIRouter,HTTPException
 from app.depenencies import r_queue
+from app.internal.auth import CurrentUser
 from enum import IntEnum, auto
 
 router = APIRouter(
@@ -28,14 +29,14 @@ job_states = {
 
 
 @router.get('/{job_id}', status_code=200)
-async def check_job(job_id, redis_queue: r_queue):
+async def check_job(job_id: str, user: CurrentUser, redis_queue: r_queue):
     '''
-        Route for checking the status of a create job.
+        Route for checking the status of one of the signed-in user's jobs.
 
         Returns 200, result
     '''
     job = redis_queue.fetch_job(job_id)
-    if not job:
-        raise HTTPException(f"No job with id {job_id} on host", 404)
+    if not job or job.meta.get("owner_id") != user.uid:
+        raise HTTPException(status_code=404, detail=f"No job with id {job_id} on host")
 
     return {"msg": {"status": job_states[job.get_status()]}}

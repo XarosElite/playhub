@@ -252,7 +252,8 @@ def validate_environment(game: dict, values: Any) -> tuple[dict[str, Any], dict[
     Validate user-submitted settings against a game's schema.
 
     Empty values fall back to the field's default; if there is no default the
-    variable is left unset so the image's own default applies.
+    variable is left unset so the image's own default applies (or, for a
+    required field, it is an error).
 
     Returns ``(settings, container_env)``: the typed values keyed by field name
     (for storage) and the string env vars keyed by env var name (for Docker).
@@ -273,12 +274,11 @@ def validate_environment(game: dict, values: Any) -> tuple[dict[str, Any], dict[
     for name, field in schema.items():
         value = values.get(name)
         if _is_empty(value):
+            value = field["default"]
+        if _is_empty(value):
             if field["required"]:
                 errors[name] = "Required"
-                continue
-            value = field["default"]
-            if _is_empty(value):
-                continue
+            continue
         try:
             value = _check_enum(field, _coerce(field, value))
         except ValueError as e:

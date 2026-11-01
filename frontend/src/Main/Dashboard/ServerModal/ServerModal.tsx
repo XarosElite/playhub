@@ -71,7 +71,8 @@ function validateEnvironment(values: ServerFormValues, fields: FieldSchemas): Fo
   for (const [key, def] of Object.entries(fields)) {
     const value = values.environment[key];
     if (isEmpty(value)) {
-      if (def.required) errors[envPath(key)] = 'Required';
+      // The backend falls back to the default, so only a required field with no default is an error.
+      if (def.required && def.default == null) errors[envPath(key)] = 'Required';
       continue;
     }
     if (def.type === 'integer' || def.type === 'number') {
