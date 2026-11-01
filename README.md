@@ -127,3 +127,5 @@ docker compose restart api
 - **Redis**: Message queue and state storage. Holds pending jobs, server status, and facilitates communication between API and workers.
 - **PostgreSQL**: Persistent storage for server metadata including name, game type, state, port assignment, configuration (JSON), and creation timestamps.
 - **Docker Proxy** (`tecnativa/docker-socket-proxy`): Provides restricted, namespace-limited access to the Docker daemon for the API and worker services.
+
+Testing Mirror here
