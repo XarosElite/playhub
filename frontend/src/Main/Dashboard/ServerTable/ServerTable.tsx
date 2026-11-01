@@ -109,8 +109,10 @@ const ServerTable = () => {
                         Add Server
                     </Button>
                 </Group>
+                <div className={classes.tableWrapper}>
+                <div className={classes.tableFill}>
                 <DataTable
-                    height={500}
+                    height="100%"
                     idAccessor={'ID'}
                     noRecordsText="No servers found"
                     fetching={initialLoad}
@@ -241,6 +243,8 @@ const ServerTable = () => {
                         },
                     }}
                 />
+                </div>
+                </div>
         </>
     );
 }

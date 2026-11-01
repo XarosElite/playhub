@@ -1,6 +1,9 @@
 import React, { useContext } from "react";
 import { observer } from "mobx-react";
-import { Card, Group, Text, Title } from "@mantine/core";
+import { Card, Collapse, Group, Text, Title, UnstyledButton } from "@mantine/core";
+import { useLocalStorage } from "@mantine/hooks";
+import { IconChevronDown } from "@tabler/icons-react";
+import clsx from "clsx";
 import { AreaChart, AreaChartSeries, ChartData } from "@mantine/charts";
 
 import { SystemInfoContext } from "../../../Store/SystemInfoStore";
@@ -9,10 +12,37 @@ import classes from './SystemInfo.module.scss';
 
 const SystemInfo = observer(() => {
     const systemInfoStore = useContext(SystemInfoContext);
+    const [expanded, setExpanded] = useLocalStorage<boolean>({
+        key: 'playhub-system-info-expanded',
+        defaultValue: true,
+        getInitialValueInEffect: false,
+    });
+    const latest = systemInfoStore.latestSystemInfo?.sys_info;
 
     return (
         <div>
-            <Title order={2} mb={16}>System Information</Title>
+            <UnstyledButton
+                className={classes.header}
+                onClick={() => setExpanded(!expanded)}
+                aria-expanded={expanded}
+                aria-controls="system-info-panel"
+            >
+                <Group gap="sm" wrap="nowrap">
+                    <IconChevronDown
+                        size={22}
+                        stroke={2}
+                        className={clsx(classes.chevron, !expanded && classes.chevronCollapsed)}
+                    />
+                    <Title order={2}>System Information</Title>
+                </Group>
+                {!expanded && latest && (
+                    <Group gap="lg" wrap="nowrap" visibleFrom="xs">
+                        <Text size="sm" c="dimmed">CPU <Text span fw={600} c="var(--mantine-color-text)">{latest.cpu_usage}%</Text></Text>
+                        <Text size="sm" c="dimmed">RAM <Text span fw={600} c="var(--mantine-color-text)">{latest.used_ram_pct}%</Text> ({latest.used_ram_gb} GB)</Text>
+                    </Group>
+                )}
+            </UnstyledButton>
+            <Collapse in={expanded} id="system-info-panel">
             <div className={classes.sysInfoContainer}>
                 <SystemCard
                     title="Total CPU Usage"
@@ -41,6 +71,7 @@ const SystemInfo = observer(() => {
                     </Group>
                 </SystemCard>
             </div>
+            </Collapse>
         </div>
     )
 });

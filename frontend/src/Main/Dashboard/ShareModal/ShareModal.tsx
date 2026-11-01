@@ -118,6 +118,7 @@ const ShareModal: React.FC<ShareModalProps> = ({ server, onClose, onSaved }) => 
                         onChange={setSelected}
                         renderOption={renderOption}
                         filter={filter}
+                        hidePickedOptions
                         searchable
                         clearable
                         nothingFoundMessage="No one matches"

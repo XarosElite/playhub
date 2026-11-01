@@ -14,3 +14,17 @@
 .pendingActionIndicator {
     scale: 40%;
 }
+// Grows to fill the Servers section. The flex-sized wrapper has no definite
+// height for the DataTable's `height="100%"` to resolve against, so an
+// absolutely positioned box pinned to its edges provides one. The table then
+// fills the space and scrolls when there are more rows.
+.tableWrapper {
+    flex: 1;
+    min-height: 0;
+    position: relative;
+}
+
+.tableFill {
+    position: absolute;
+    inset: 0;
+}
