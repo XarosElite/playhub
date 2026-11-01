@@ -1,0 +1,40 @@
+# Copies main to the private AsgardHomelabOps/playhub repo, which builds the
+# images on the Asgard self-hosted runners. Runs on GitHub-hosted runners only,
+# and only for pushes to main (after a merge), never for pull requests.
+name: Mirror to Asgard
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: mirror-to-asgard
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  mirror:
+    if: github.repository == 'XarosElite/playhub'   # never in forks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0              # full history: a shallow clone can't be pushed
+          persist-credentials: false
+
+      - name: Push main to the mirror's upstream branch
+        env:
+          TOKEN: ${{ secrets.ASGARD_MIRROR_TOKEN }}
+        run: |
+          git push --force \
+            "https://x-access-token:${TOKEN}@github.com/AsgardHomelabOps/playhub.git" \
+            "${GITHUB_SHA}:refs/heads/upstream"
+
+      - name: Start the build
+        env:
+          GH_TOKEN: ${{ secrets.ASGARD_MIRROR_TOKEN }}
+        run: |
+          gh api repos/AsgardHomelabOps/playhub/dispatches \
+            -f event_type=upstream-main -f "client_payload[sha]=${GITHUB_SHA}"
