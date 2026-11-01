@@ -62,7 +62,7 @@ const ServerModal: React.FC<ServerModalProps> = ({ opened, closeHandler, onCreat
   const form = useForm<ServerFormValues>({
     initialValues: { name: '', environment: {} },
     validate: values => {
-      const nameError = validateServerName(values.name);
+      const nameError = validateServerName(values.name.trim());
       return {
         ...(nameError ? { name: nameError } : {}),
         ...validateEnvironment(values.environment, fieldsRef.current),

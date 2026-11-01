@@ -12,7 +12,8 @@ from base as test
 
 WORKDIR /app
 COPY --from=base /install /usr/local
-RUN pip install pytest
+COPY requirements-dev.txt .
+RUN pip install -r requirements-dev.txt
 COPY . .
 
 ENTRYPOINT ["pytest"]

@@ -131,7 +131,7 @@ const Main = observer(() => {
                 variant={darkMode ? 'outline' : 'filled'}
                 color={darkMode ? 'green' : 'green.6'}
                 size="md"
-                aria-label="Settings"
+                aria-label="Toggle color theme"
                 onClick={() => setColorScheme(darkMode ? 'light' : 'dark')}
               >
                 {darkMode ? <IconMoon stroke={1} /> : <IconSun stroke={1} />}

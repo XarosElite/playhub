@@ -34,6 +34,11 @@ import classes from './ServerTable.module.scss';
 
 type Row = MaybeLeaving<TopLevelServerType>;
 
+// Rows are keyed by name: a new server's ID changes from its name to the
+// container ID once the container exists, and keying by ID would make the row
+// animate out and back in (and lose its expanded state) at that moment.
+const rowKey = (server: TopLevelServerType) => server.Name;
+
 const ServerTable = observer(() => {
     const systemInfoStore = useContext(SystemInfoContext);
     const serverStore = useContext(ServerStoreContext);
@@ -59,8 +64,8 @@ const ServerTable = observer(() => {
         () => sortServers(filterServers(all, filters), sortStatus.columnAccessor as SortKey, sortStatus.direction),
         [all, filters, sortStatus],
     );
-    const rows = useExitingRecords<TopLevelServerType>(visible, all, s => s.ID);
-    useFlipRows(viewportRef, rows.map(r => r.ID));
+    const rows = useExitingRecords<TopLevelServerType>(visible, all, rowKey);
+    useFlipRows(viewportRef, rows.map(rowKey));
 
     const gameTypes = useMemo(() => [...new Set(all.map(s => s.GameType))].sort(), [all]);
     const hasShared = all.some(s => !s.IsOwner);
@@ -68,24 +73,24 @@ const ServerTable = observer(() => {
     // Keep the selection in sync with the latest server data (and drop removed servers).
     useEffect(() => {
         setSelected(current => current
-            .map(s => all.find(x => x.ID === s.ID || x.Name === s.Name))
+            .map(s => all.find(x => rowKey(x) === rowKey(s)))
             .filter((s): s is TopLevelServerType => !!s));
     }, [all]);
 
     // --- keyboard: / search, ↑↓ move, Enter expand, O open ---------------
     const moveActive = (delta: number) => {
         if (visible.length === 0) return;
-        const index = visible.findIndex(s => s.ID === activeId);
+        const index = visible.findIndex(s => rowKey(s) === activeId);
         const next = visible[Math.max(0, Math.min(visible.length - 1, index < 0 ? 0 : index + delta))];
-        setActiveId(next.ID);
-        viewportRef.current?.querySelector(`tr[data-row-id="${CSS.escape(next.ID)}"]`)?.scrollIntoView({ block: 'nearest' });
+        setActiveId(rowKey(next));
+        viewportRef.current?.querySelector(`tr[data-row-id="${CSS.escape(rowKey(next))}"]`)?.scrollIntoView({ block: 'nearest' });
     };
-    const activeServer = visible.find(s => s.ID === activeId);
+    const activeServer = visible.find(s => rowKey(s) === activeId);
     useHotkeys([
         ['/', () => searchRef.current?.focus()],
         ['ArrowDown', () => moveActive(1)],
         ['ArrowUp', () => moveActive(-1)],
-        ['Enter', () => activeServer && toggleExpanded(activeServer.ID)],
+        ['Enter', () => activeServer && toggleExpanded(rowKey(activeServer))],
         ['o', () => activeServer && navigate(serverPath(activeServer))],
     ]);
 
@@ -135,7 +140,7 @@ const ServerTable = observer(() => {
                 <div className={classes.tableFill}>
                 <DataTable<Row>
                     height="100%"
-                    idAccessor="ID"
+                    idAccessor="Name"
                     withTableBorder
                     highlightOnHover
                     scrollViewportRef={viewportRef}
@@ -143,10 +148,10 @@ const ServerTable = observer(() => {
                     rowClassName={record => clsx(
                         classes.row,
                         record.__leaving && classes.rowLeaving,
-                        record.ID === activeId && classes.rowActive,
+                        rowKey(record) === activeId && classes.rowActive,
                     )}
-                    customRowAttributes={record => ({ 'data-row-id': record.ID })}
-                    onRowClick={({ record }) => setActiveId(record.ID)}
+                    customRowAttributes={record => ({ 'data-row-id': rowKey(record) })}
+                    onRowClick={({ record }) => setActiveId(rowKey(record))}
                     onRowDoubleClick={({ record }) => navigate(serverPath(record))}
                     // Bulk selection is a desktop workflow; phones get the room for the name instead.
                     selectedRecords={isPhone ? undefined : selected}
@@ -163,7 +168,7 @@ const ServerTable = observer(() => {
                                 <Group gap="0.5rem" align="center" wrap="nowrap">
                                     <IconChevronRight
                                         size={16}
-                                        className={clsx(classes.chevron, expandedIds.includes(record.ID) && classes.chevronOpen)}
+                                        className={clsx(classes.chevron, expandedIds.includes(rowKey(record)) && classes.chevronOpen)}
                                     />
                                     {/* Capped so long names truncate instead of widening the table. */}
                                     <Stack gap={0} miw={0} maw={isPhone ? 140 : 280}>

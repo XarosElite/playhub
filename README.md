@@ -92,6 +92,40 @@ In production mode, the frontend is compiled and served through a light Nginx im
 
 ---
 
+## Testing
+
+Every part of PlayHub has automated tests. Run them all in Docker (nothing touches your running stack or game servers):
+
+```bash
+./run-tests.sh                 # api, worker, frontend and e2e
+./run-tests.sh api worker      # just some suites
+RUN_DOCKER_TESTS=1 ./run-tests.sh worker   # also test the worker against the real Docker daemon
+```
+
+| Suite | Where | What it covers |
+| --- | --- | --- |
+| **API** (pytest) | `api/tests/` | Every route (auth, servers, sharing, settings, activity, jobs, system), the WebSockets (live list, logs, terminal), games.yaml validation, Firebase token verification with real RS256 signatures, the user directory, the background monitor (crash detection, stats, player counts), the Minecraft status ping against a fake server, port allocation, database constraints and startup, and real RQ queuing on fakeredis. |
+| **Worker** (pytest) | `docker-executer/tests/` | Every job (create, recreate with rollback, start, stop, restart, delete) against a fake Docker, plus opt-in tests against the real Docker daemon (`RUN_DOCKER_TESTS=1`, uses `redis:7` as a stand-in game and only touches `playhub-itest-*` containers). |
+| **Frontend** (Vitest + Testing Library) | `frontend/src/**/*.test.ts(x)` | API client and auth header, stores (live socket, reconnect/backoff, polling fallback, optimistic actions), every component and page, hooks, form validation. |
+| **E2E** (Playwright) | `frontend/e2e/` | The real app in Chromium, Firefox and a phone, against a fake API (`e2e/fakeBackend.ts`) with Firebase swapped for a fake sign-in: signing in/out, creating, controlling, sharing and deleting servers, the server page, layout on small screens. |
+
+The API and worker tests use SQLite by default and Postgres when `TEST_DATABASE_URL` is set (the Docker runner always uses Postgres).
+
+Running suites directly while developing:
+
+```bash
+# API / worker
+cd api && pip install -r requirements-dev.txt && pytest
+cd docker-executer && pip install -r requirements-dev.txt && pytest
+
+# Frontend
+cd frontend && yarn install
+yarn test            # unit + component tests (yarn test:watch, yarn test:coverage)
+npx playwright install && yarn test:e2e   # browser tests
+```
+
+GitHub Actions runs everything on pushes to `main` and on pull requests (`.github/workflows/tests.yml`).
+
 ## Useful Commands
 
 ```bash

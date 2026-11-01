@@ -138,7 +138,18 @@ def recreate_server(name, env, ports, img, data_path=None):
         old.rename(backup_name)
         new = client.containers.run(**run_kwargs)
     except Exception as e:
-        # Put the old container back the way it was.
+        # Put the old container back the way it was. If the new container was
+        # created but failed to start (e.g. its port is taken), it holds the
+        # name, so remove it first. Its data volumes are shared with the old
+        # container, so they are kept.
+        try:
+            leftover = client.containers.get(name)
+            if leftover.id != old.id:
+                leftover.remove(force=True)
+        except docker.errors.NotFound:
+            pass
+        except Exception as cleanup_error:
+            logger.error(f"Failed to remove the new container for {name}: {cleanup_error}")
         try:
             old.reload()
             if old.name == backup_name:
@@ -207,9 +218,8 @@ def delete_server(name):
             client.volumes.get(volume_name(name)).remove(force=True)
         except docker.errors.NotFound:
             pass
-        with db_engine.connect() as conn:
-            conn.execute(text("UPDATE servers SET state = 'deleted' WHERE name = :name"), {"name": name})
-            conn.commit()
+        # The API has already marked the row deleted and released its name, so
+        # it must not be looked up by name here: a new server may now use it.
         return "Finished"
     except Exception as e:
         logger.error(f"Failed to delete server {name}: {e}")

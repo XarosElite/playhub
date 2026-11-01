@@ -1,6 +1,6 @@
 import { useContext, useState } from "react";
 import { observer } from "mobx-react";
-import { Location, Navigate, useLocation } from "react-router-dom";
+import { Location, useLocation } from "react-router-dom";
 import {
     ActionIcon,
     Alert,
@@ -19,6 +19,7 @@ import { FirebaseError } from "firebase/app";
 
 import { AuthContext } from "../Store/AuthStore";
 import { isFirebaseConfigured } from "../Auth/firebase";
+import Redirect from "../Auth/Redirect";
 
 import bannerLight from '/playhub_logo_light.svg';
 import bannerDark from '/playhub_logo_dark.svg';
@@ -63,7 +64,7 @@ const Login = observer(() => {
     // Already signed in (and not mid sign-in): go where the user was headed.
     if (authStore.user && !authStore.signingIn) {
         const from = (location.state as { from?: Location } | null)?.from?.pathname ?? '/';
-        return <Navigate to={from} replace />;
+        return <Redirect to={from} replace />;
     }
 
     const handleSignIn = () => {

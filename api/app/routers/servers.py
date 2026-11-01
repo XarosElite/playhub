@@ -22,7 +22,7 @@ from app.internal.config import (
 )
 from app.internal.events import record_event
 from app.internal.live import get_live
-from app.models.servers import TRANSITIONAL_STATES, Server, ServerEvent, ServerShare
+from app.models.servers import TRANSITIONAL_STATES, Server, ServerEvent, ServerShare, release_name_and_port
 from app.models.users import User, user_to_dict
 
 router = APIRouter(
@@ -192,11 +192,14 @@ def delete_server(server_id: str, user: CurrentUser, redis_queue: r_queue, db = 
 
 
 def _delete(db, redis_queue, user, server) -> str:
+    # The container and volume are named after the server; the worker removes them.
+    name = server.name
     server.state = "deleted"
     server.status_message = None
+    release_name_and_port(server)
     record_event(db, server, user.uid, "deleted")
     db.commit()
-    return enqueue_for(redis_queue, user, "tasks.dockerjobs.delete_server", server.name).id
+    return enqueue_for(redis_queue, user, "tasks.dockerjobs.delete_server", name).id
 
 
 @router.post('/create', status_code=201)

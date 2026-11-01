@@ -1,9 +1,10 @@
 import React, { useContext } from "react";
 import { observer } from "mobx-react";
-import { Navigate, useLocation } from "react-router-dom";
+import { useLocation } from "react-router-dom";
 import { Center, Loader } from "@mantine/core";
 
 import { AuthContext } from "../Store/AuthStore";
+import Redirect from "./Redirect";
 
 /**
  * Renders its children only for a signed-in user; otherwise redirects to
@@ -22,7 +23,7 @@ const RequireAuth: React.FC<{ children: React.ReactNode }> = observer(({ childre
     }
 
     if (!authStore.user) {
-        return <Navigate to="/login" replace state={{ from: location }} />;
+        return <Redirect to="/login" replace state={{ from: location }} />;
     }
 
     return <>{children}</>;

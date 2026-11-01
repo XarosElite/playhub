@@ -5,7 +5,7 @@ import reactRefresh from 'eslint-plugin-react-refresh'
 import tseslint from 'typescript-eslint'
 
 export default tseslint.config(
-  { ignores: ['dist'] },
+  { ignores: ['dist', 'dist-e2e', 'coverage', 'playwright-report', 'test-results'] },
   {
     extends: [js.configs.recommended, ...tseslint.configs.recommended],
     files: ['**/*.{ts,tsx}'],
@@ -24,5 +24,15 @@ export default tseslint.config(
         { allowConstantExport: true },
       ],
     },
+  },
+  {
+    // Test helpers aren't hot-reloaded, so Fast Refresh's export rule doesn't apply.
+    files: ['src/test/**', '**/*.test.{ts,tsx}', 'e2e/**'],
+    rules: { 'react-refresh/only-export-components': 'off' },
+  },
+  {
+    // Playwright fixtures call `use()`, which isn't React's hook.
+    files: ['e2e/**'],
+    rules: { 'react-hooks/rules-of-hooks': 'off' },
   },
 )

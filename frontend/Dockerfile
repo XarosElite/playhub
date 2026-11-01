@@ -7,6 +7,24 @@ COPY package.json yarn.lock ./
 
 RUN yarn install
 
+# ============================= test =============================
+# Unit and component tests (Vitest), type checks and lint.
+from base as test
+COPY . .
+CMD ["sh", "-c", "yarn lint && yarn tsc -b && yarn test"]
+
+# ========================= e2e =========================
+# Browser tests (Playwright) against a fake API. Its own image: the browsers
+# need glibc, and the version must match @playwright/test in package.json.
+FROM mcr.microsoft.com/playwright:v1.49.0-noble as e2e
+WORKDIR /frontend
+RUN npm install -g yarn@1.22.22
+COPY package.json yarn.lock ./
+RUN yarn install --frozen-lockfile
+COPY . .
+ENV CI=1
+CMD ["yarn", "test:e2e"]
+
 # ========================= development =========================
 from base as development
 COPY . .

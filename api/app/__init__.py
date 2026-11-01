@@ -10,11 +10,12 @@ from app.routers import all_routers
 from app.internal import setup_logger
 from app.internal.auth import log_auth_config
 from app.internal.live import start_monitor, stop_monitor
-from app.models.servers import Server, ServerShare, ServerEvent  # noqa: F401 – registers tables
+from app.models.servers import Server, ServerShare, ServerEvent, release_name_and_port  # noqa: F401 – registers tables
 from app.models.users import User  # noqa: F401 – registers tables
 from app.database import Base, engine
-from sqlalchemy import inspect, text
+from sqlalchemy import inspect, select, text
 from sqlalchemy.exc import OperationalError
+from sqlalchemy.orm import Session
 
 # Columns added after a table was first created. create_all() only creates
 # missing tables, so add these to existing databases on startup.
@@ -36,6 +37,7 @@ def init_database():
         try:
             Base.metadata.create_all(bind=engine)
             add_missing_columns()
+            release_deleted_servers()
             logging.info("Database tables initialized successfully.")
             return
         except OperationalError as e:
@@ -56,6 +58,17 @@ def add_missing_columns():
             if column not in existing:
                 conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {ddl_type}"))
                 logging.info(f"Added column {table}.{column}")
+
+
+def release_deleted_servers():
+    """Servers deleted before deleting released their name and port still hold them."""
+    with Session(engine) as db:
+        stale = db.scalars(select(Server).where(Server.state == "deleted", Server.port.is_not(None))).all()
+        for server in stale:
+            release_name_and_port(server)
+        db.commit()
+        if stale:
+            logging.info(f"Released the names and ports of {len(stale)} deleted server(s)")
 
 
 @asynccontextmanager

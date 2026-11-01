@@ -18,6 +18,15 @@ class Server(Base):
     status_message = Column(Text, nullable=True)
 
 
+def release_name_and_port(server: Server) -> None:
+    """
+    Frees a deleted server's name and port for new servers. The row is kept
+    (with its activity history) under a name no user can choose.
+    """
+    server.name = f"{server.name} (deleted #{server.id})"
+    server.port = None
+
+
 # Server lifecycle. Transitional states are set by the API when a job is
 # queued; the worker moves the server to a settled state when the job ends.
 TRANSITIONAL_STATES = {"starting", "stopping", "restarting", "updating"}

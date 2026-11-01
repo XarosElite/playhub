@@ -1,0 +1,63 @@
+# Runs every test suite in containers, against throwaway Postgres databases.
+#
+#   docker compose -f docker-compose.test.yml run --rm api-tests
+#   docker compose -f docker-compose.test.yml run --rm worker-tests
+#   docker compose -f docker-compose.test.yml run --rm frontend-tests
+#   docker compose -f docker-compose.test.yml run --rm frontend-e2e
+#
+# or all of them with ./run-tests.sh. Nothing here touches the main stack's
+# database or game servers.
+name: playhub-tests
+
+x-test-db: &test-db
+  image: postgres:latest
+  environment:
+    POSTGRES_USER: playhub
+    POSTGRES_PASSWORD: playhub
+    POSTGRES_DB: playhub_test
+  tmpfs:
+    - /var/lib/postgresql
+  healthcheck:
+    test: ["CMD-SHELL", "pg_isready -U playhub -d playhub_test"]
+    interval: 1s
+    retries: 30
+
+services:
+  api-test-db: *test-db
+  worker-test-db: *test-db
+
+  api-tests:
+    build:
+      context: ./api
+      target: test
+    environment:
+      TEST_DATABASE_URL: postgresql+psycopg2://playhub:playhub@api-test-db:5432/playhub_test
+    depends_on:
+      api-test-db:
+        condition: service_healthy
+
+  worker-tests:
+    build:
+      context: ./docker-executer
+      target: test
+    environment:
+      TEST_DATABASE_URL: postgresql+psycopg2://playhub:playhub@worker-test-db:5432/playhub_test
+      # Also run the tests against the real Docker daemon. They only create
+      # (and always remove) containers and volumes named playhub-itest-*.
+      RUN_DOCKER_TESTS: ${RUN_DOCKER_TESTS:-0}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      worker-test-db:
+        condition: service_healthy
+
+  frontend-tests:
+    build:
+      context: ./frontend
+      target: test
+
+  frontend-e2e:
+    build:
+      context: ./frontend
+      target: e2e
+    ipc: host

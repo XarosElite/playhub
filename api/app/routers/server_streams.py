@@ -10,6 +10,7 @@ authenticate_websocket).
 import asyncio
 import json
 import os
+import socket
 import threading
 import time
 
@@ -209,7 +210,13 @@ async def server_terminal_websocket(websocket: WebSocket, server_id: str):
             try:
                 await websocket.send_text(data.decode('utf-8', errors='ignore'))
             except Exception:
-                break
+                return
+        # The shell exited (e.g. the user typed `exit`): end the session.
+        try:
+            await websocket.send_text("\r\n\033[33m[Session ended]\033[0m\r\n")
+            await websocket.close()
+        except Exception:
+            pass
 
     read_task = asyncio.create_task(read_docker())
 
@@ -226,6 +233,12 @@ async def server_terminal_websocket(websocket: WebSocket, server_id: str):
         pass
     finally:
         read_task.cancel()
+        # shutdown() (unlike close()) wakes the thread blocked in recv() and
+        # tells Docker the session is over, so the shell in the container exits.
+        try:
+            raw_sock.shutdown(socket.SHUT_RDWR)
+        except Exception:
+            pass
         try:
             raw_sock.close()
         except Exception:

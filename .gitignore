@@ -1,1 +1,11 @@
 .env
+
+# Tests and tooling
+__pycache__/
+.pytest_cache/
+.coverage
+htmlcov/
+frontend/coverage/
+frontend/playwright-report/
+frontend/test-results/
+frontend/dist-e2e/
