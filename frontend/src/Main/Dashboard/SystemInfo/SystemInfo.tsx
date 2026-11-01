@@ -4,6 +4,10 @@ import { Card, Collapse, Group, Text, Title, UnstyledButton } from "@mantine/cor
 import { useLocalStorage } from "@mantine/hooks";
 import { IconChevronDown } from "@tabler/icons-react";
 import clsx from "clsx";
+import { motion } from "motion/react";
+
+import AnimatedNumber from "../../../Shared/Components/AnimatedNumber";
+import { fadeUp, stagger } from "../../../Shared/motion";
 import { AreaChart, AreaChartSeries, ChartData } from "@mantine/charts";
 
 import { SystemInfoContext } from "../../../Store/SystemInfoStore";
@@ -37,13 +41,13 @@ const SystemInfo = observer(() => {
                 </Group>
                 {!expanded && latest && (
                     <Group gap="lg" wrap="nowrap" visibleFrom="xs">
-                        <Text size="sm" c="dimmed">CPU <Text span fw={600} c="var(--mantine-color-text)">{latest.cpu_usage}%</Text></Text>
-                        <Text size="sm" c="dimmed">RAM <Text span fw={600} c="var(--mantine-color-text)">{latest.used_ram_pct}%</Text> ({latest.used_ram_gb} GB)</Text>
+                        <Text size="sm" c="dimmed">CPU <Text span fw={600} c="var(--mantine-color-text)"><AnimatedNumber value={latest.cpu_usage} decimals={1} suffix="%" /></Text></Text>
+                        <Text size="sm" c="dimmed">RAM <Text span fw={600} c="var(--mantine-color-text)"><AnimatedNumber value={latest.used_ram_pct} decimals={1} suffix="%" /></Text> ({latest.used_ram_gb} GB)</Text>
                     </Group>
                 )}
             </UnstyledButton>
             <Collapse in={expanded} id="system-info-panel">
-            <div className={classes.sysInfoContainer}>
+            <motion.div className={classes.sysInfoContainer} variants={stagger(0.08)} initial="hidden" animate="visible">
                 <SystemCard
                     title="Total CPU Usage"
                     data={systemInfoStore.systemHistory.map(item => item.sys_info)}
@@ -53,7 +57,7 @@ const SystemInfo = observer(() => {
                 >
                     <Group gap={6}>
                         <Text size="lg" fw={600}>Usage:</Text>
-                        <Text size="lg">{systemInfoStore.latestSystemInfo?.sys_info.cpu_usage}%</Text>
+                        <Text size="lg"><AnimatedNumber value={systemInfoStore.latestSystemInfo?.sys_info.cpu_usage} decimals={1} suffix="%" /></Text>
                     </Group>
                 </SystemCard>
                 <SystemCard
@@ -66,11 +70,11 @@ const SystemInfo = observer(() => {
                     <Group gap={6}>
                         <Text size="lg" fw={600}>Usage:</Text>
                         <Text size="lg" fs="italic">
-                            {systemInfoStore.latestSystemInfo?.sys_info.used_ram_pct}% ({systemInfoStore.latestSystemInfo?.sys_info.used_ram_gb}  GB)
+                            <AnimatedNumber value={systemInfoStore.latestSystemInfo?.sys_info.used_ram_pct} decimals={1} suffix="%" /> ({systemInfoStore.latestSystemInfo?.sys_info.used_ram_gb} GB)
                         </Text>
                     </Group>
                 </SystemCard>
-            </div>
+            </motion.div>
             </Collapse>
         </div>
     )
@@ -90,7 +94,7 @@ interface SystemCardProps {
  */
 const SystemCard: React.FC<SystemCardProps> = ({title, data, series, dataKey, label, children}) => {
     return(
-        <Card padding="md" shadow="md" className={classes.systemCard}>
+        <Card component={motion.div} variants={fadeUp} padding="md" shadow="md" className={classes.systemCard}>
             <Title order={4}>{title}</Title>
             <Card.Section>
                 <AreaChart

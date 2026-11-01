@@ -1,253 +1,255 @@
-import { useCallback, useContext, useEffect, useState } from "react";
-import { Avatar, Badge, Button, Group, Loader, Stack, Switch, Text, Tooltip } from "@mantine/core"
-import { notifications } from "@mantine/notifications";
-import { modals } from "@mantine/modals";
-import { useDisclosure } from "@mantine/hooks";
-import { IconRestore, IconServer, IconShare, IconTrash, IconUsers } from "@tabler/icons-react";
-import { DataTable } from 'mantine-datatable';
-import { format } from "date-fns";
+import { useContext, useEffect, useMemo, useRef, useState } from "react";
+import { observer } from "mobx-react";
+import { Badge, Group, Stack, Text, Tooltip } from "@mantine/core";
+import { useDisclosure, useHotkeys, useLocalStorage, useMediaQuery } from "@mantine/hooks";
+import { IconChevronRight, IconUsers } from "@tabler/icons-react";
+import { DataTable, DataTableSortStatus } from 'mantine-datatable';
+import { useNavigate } from "react-router-dom";
+import clsx from "clsx";
 
-import { GameServerApi, ServerActionType, TopLevelServerType } from "../../../Api/GameServer";
-import { SystemInfoContext } from "../../../Store/SystemInfoStore";
-import { gameIconFact } from "../../../Shared/Util";
-import ServerModal from "../ServerModal";
-import ServerTerminal from "../ServerTerminal";
-import ShareModal from "../ShareModal";
+import { TopLevelServerType } from "../../../Api/GameServer";
 import { displayUserName } from "../../../Api/Users";
+import { SystemInfoContext } from "../../../Store/SystemInfoStore";
+import { ServerStoreContext } from "../../../Store/ServerStore";
+import { gameIconFact } from "../../../Shared/Util";
+import StatusBadge from "../../../Shared/Components/StatusBadge";
+import CopyAddress from "../../../Shared/Components/CopyAddress";
+import RelativeTime from "../../../Shared/Components/RelativeTime";
+import AnimatedNumber from "../../../Shared/Components/AnimatedNumber";
+import { useFlipRows } from "../../../Shared/Hooks/useFlipRows";
+import { MaybeLeaving, useExitingRecords } from "../../../Shared/Hooks/useExitingRecords";
+import {
+    DEFAULT_FILTERS, ServerFilters, SortKey, filterServers, isFiltered, serverAddress, serverPath, sortServers,
+} from "../../Server/serverUtils";
+import ServerModal from "../ServerModal";
+import ServerToolbar from "./ServerToolbar";
+import ServerRowActions from "./ServerRowActions";
+import ServerExpansion from "./ServerExpansion";
+import ResourceCell from "./ResourceCell";
+import BulkActionBar from "./BulkActionBar";
+import ServerTableSkeleton from "./ServerTableSkeleton";
+import EmptyState from "./EmptyState";
 
 import classes from './ServerTable.module.scss';
 
+type Row = MaybeLeaving<TopLevelServerType>;
 
-const formatDate = (dateStr: string) => {
-    try {
-        const d = new Date(dateStr);
-        if (isNaN(d.getTime())) return dateStr || 'N/A';
-        return format(d, 'MM/dd/yy h:mm:ss a');
-    } catch {
-        return dateStr || 'N/A';
-    }
-};
-
-const ServerTable = () => {
+const ServerTable = observer(() => {
     const systemInfoStore = useContext(SystemInfoContext);
-    const [servers, setServers] = useState<TopLevelServerType[]>([]);
+    const serverStore = useContext(ServerStoreContext);
+    const navigate = useNavigate();
+
     const [addGameOpened, addGameHandlers] = useDisclosure(false);
-    const [initialLoad, setInitialLoad] = useState<boolean>(true);
-    const [modifyingServers, setModifyingServers] = useState<string[]>([]);
-    const [shareTarget, setShareTarget] = useState<TopLevelServerType | null>(null);
-    const closeShareModal = useCallback(() => setShareTarget(null), []);
-
-    useEffect(() => {
-        fetchServers();
-
-        const interval = setInterval(() => {
-            fetchServers();
-            console.log(servers)
-        }, 5000);
-
-        return () => clearInterval(interval);
-    }, []);
-
-    const fetchServers = () => {
-        GameServerApi.getServers().then(res => {
-            setServers(res.msg);
-            setInitialLoad(false);
-        });
-    }
-
-    const doServerAction = (server: TopLevelServerType, action: ServerActionType) => {
-        setModifyingServers(servers => [...servers, server.ID]);
-
-        GameServerApi.makeServerAction(server.ID, action).then((success) => {
-            if (!success) {
-                notifications.show({title: 'Server status', message: `Server update failed for ${server.Name}.`, position: 'top-right', color: 'red'});
-            }
-            fetchServers();
-        })
-        .catch(() => {
-            notifications.show({title: 'Server status', message: `Server update failed for ${server.Name}.`, position: 'top-right', color: 'red'});
-        }).finally(() => {
-            setModifyingServers(servers => servers.filter(s =>  s !== server.ID))
-        });
-    }
-
-    const deleteServer = (server: TopLevelServerType) => {
-        const {Name, ID} = server;
-        setModifyingServers(servers => [...servers, ID]);
-
-        GameServerApi.deleteServer(ID).then(() => {
-            notifications.show({title: 'Server status', message: `Deleted ${Name}.`, position: 'top-right', color: 'green'});
-            setServers(servers => servers.filter(servers => servers.ID !== ID));
-        }).catch(() => {
-            notifications.show({title: 'Server status', message: `Unable to delete ${Name}.`, position: 'top-right', color: 'red'});
-        }).finally(() => {
-            setModifyingServers(servers => servers.filter(s =>  s !== ID));
-        });
-    }
-
-    const openDeleteConfirm = (server: TopLevelServerType) => modals.openConfirmModal({
-        title: 'Delete server',
-        closeOnEscape: false,
-        closeOnClickOutside: false,
-        labels: { confirm: 'Yes, Delete', cancel: 'No, Don\'t Delete'},
-        children: (
-            <Text size="sm">
-                Are you sure you want to delete {server.Name}? There is no going back.
-            </Text>
-        ),
-        onConfirm: () => deleteServer(server),
+    const [filters, setFilters] = useState<ServerFilters>(DEFAULT_FILTERS);
+    const [sortStatus, setSortStatus] = useLocalStorage<DataTableSortStatus<TopLevelServerType>>({
+        key: 'playhub-server-sort',
+        defaultValue: { columnAccessor: 'Created', direction: 'asc' },
+        getInitialValueInEffect: false,
     });
+    const [expandedIds, setExpandedIds] = useState<string[]>([]);
+    const [selected, setSelected] = useState<TopLevelServerType[]>([]);
+    const [activeId, setActiveId] = useState<string | null>(null);
+
+    const isPhone = useMediaQuery('(max-width: 48em)') ?? false;
+    const searchRef = useRef<HTMLInputElement>(null);
+    const viewportRef = useRef<HTMLDivElement>(null);
+
+    const all = serverStore.servers;
+    const visible = useMemo(
+        () => sortServers(filterServers(all, filters), sortStatus.columnAccessor as SortKey, sortStatus.direction),
+        [all, filters, sortStatus],
+    );
+    const rows = useExitingRecords<TopLevelServerType>(visible, all, s => s.ID);
+    useFlipRows(viewportRef, rows.map(r => r.ID));
+
+    const gameTypes = useMemo(() => [...new Set(all.map(s => s.GameType))].sort(), [all]);
+    const hasShared = all.some(s => !s.IsOwner);
+
+    // Keep the selection in sync with the latest server data (and drop removed servers).
+    useEffect(() => {
+        setSelected(current => current
+            .map(s => all.find(x => x.ID === s.ID || x.Name === s.Name))
+            .filter((s): s is TopLevelServerType => !!s));
+    }, [all]);
+
+    // --- keyboard: / search, ↑↓ move, Enter expand, O open ---------------
+    const moveActive = (delta: number) => {
+        if (visible.length === 0) return;
+        const index = visible.findIndex(s => s.ID === activeId);
+        const next = visible[Math.max(0, Math.min(visible.length - 1, index < 0 ? 0 : index + delta))];
+        setActiveId(next.ID);
+        viewportRef.current?.querySelector(`tr[data-row-id="${CSS.escape(next.ID)}"]`)?.scrollIntoView({ block: 'nearest' });
+    };
+    const activeServer = visible.find(s => s.ID === activeId);
+    useHotkeys([
+        ['/', () => searchRef.current?.focus()],
+        ['ArrowDown', () => moveActive(1)],
+        ['ArrowUp', () => moveActive(-1)],
+        ['Enter', () => activeServer && toggleExpanded(activeServer.ID)],
+        ['o', () => activeServer && navigate(serverPath(activeServer))],
+    ]);
+
+    const toggleExpanded = (id: string) =>
+        setExpandedIds(ids => (ids.includes(id) ? ids.filter(x => x !== id) : [...ids, id]));
+
+    const address = (server: TopLevelServerType) => serverAddress(server, systemInfoStore.systemIP);
+
+    const toolbar = (
+        <ServerToolbar
+            ref={searchRef}
+            filters={filters}
+            onChange={setFilters}
+            gameTypes={gameTypes}
+            hasShared={hasShared}
+            onAdd={addGameHandlers.open}
+        />
+    );
+
+    const modal = <ServerModal closeHandler={addGameHandlers.close} opened={addGameOpened} onCreated={serverStore.refresh} />;
+
+    if (!serverStore.loaded) {
+        return <>{modal}{toolbar}<ServerTableSkeleton /></>;
+    }
+
+    if (visible.length === 0 && rows.length === 0) {
+        return (
+            <>
+                {modal}
+                {toolbar}
+                <div className={classes.emptyWrapper}>
+                    <EmptyState
+                        filtered={all.length > 0 && isFiltered(filters)}
+                        onAdd={addGameHandlers.open}
+                        onClearFilters={() => setFilters(DEFAULT_FILTERS)}
+                    />
+                </div>
+            </>
+        );
+    }
 
     return (
         <>
-            <ServerModal closeHandler={addGameHandlers.close} opened={addGameOpened} />
-            <ShareModal server={shareTarget} onClose={closeShareModal} onSaved={fetchServers} />
-                <Group>
-                    <Button
-                        onClick={addGameHandlers.open}
-                    >
-                        Add Server
-                    </Button>
-                </Group>
-                <div className={classes.tableWrapper}>
+            {modal}
+            {toolbar}
+            <div className={classes.tableWrapper}>
                 <div className={classes.tableFill}>
-                <DataTable
+                <DataTable<Row>
                     height="100%"
-                    idAccessor={'ID'}
-                    noRecordsText="No servers found"
-                    fetching={initialLoad}
+                    idAccessor="ID"
                     withTableBorder
-                    noRecordsIcon={
-                        <IconServer size={36} strokeWidth={1.5} />
-                    }
-                    rowClassName={classes.row}
+                    highlightOnHover
+                    scrollViewportRef={viewportRef}
                     className={classes.table}
+                    rowClassName={record => clsx(
+                        classes.row,
+                        record.__leaving && classes.rowLeaving,
+                        record.ID === activeId && classes.rowActive,
+                    )}
+                    customRowAttributes={record => ({ 'data-row-id': record.ID })}
+                    onRowClick={({ record }) => setActiveId(record.ID)}
+                    onRowDoubleClick={({ record }) => navigate(serverPath(record))}
+                    // Bulk selection is a desktop workflow; phones get the room for the name instead.
+                    selectedRecords={isPhone ? undefined : selected}
+                    onSelectedRecordsChange={isPhone ? undefined : records => setSelected(records.filter(r => !(r as Row).__leaving))}
+                    isRecordSelectable={record => !record.__leaving}
+                    sortStatus={sortStatus as DataTableSortStatus<Row>}
+                    onSortStatusChange={status => setSortStatus(status as DataTableSortStatus<TopLevelServerType>)}
+                    records={rows}
                     columns={[
                         {
                             accessor: 'Name',
-                            title: 'Name',
-                            render: (record) => (
-                                <Group gap={'0.5rem'} align="center">
-                                    {record.Name}
+                            sortable: true,
+                            render: record => (
+                                <Group gap="0.5rem" align="center" wrap="nowrap">
+                                    <IconChevronRight
+                                        size={16}
+                                        className={clsx(classes.chevron, expandedIds.includes(record.ID) && classes.chevronOpen)}
+                                    />
+                                    {/* Capped so long names truncate instead of widening the table. */}
+                                    <Stack gap={0} miw={0} maw={isPhone ? 140 : 280}>
+                                        <Text size="sm" fw={600} truncate>{record.Name}</Text>
+                                        <RelativeTime date={record.Created} prefix="Created" size="xs" c="dimmed" truncate />
+                                    </Stack>
                                     {!record.IsOwner &&
                                         <Tooltip label={`Shared with you by ${displayUserName(record.Owner)}`}>
-                                            <Badge variant="light" color="blue" size="sm">Shared</Badge>
+                                            <Badge variant="light" color="blue" size="sm" style={{ flexShrink: 0 }} visibleFrom="sm">Shared</Badge>
                                         </Tooltip>
                                     }
                                     {record.IsOwner && !!record.SharedWith?.length &&
                                         <Tooltip label={`Shared with ${record.SharedWith.map(displayUserName).join(', ')}`}>
-                                            <Badge variant="light" color="gray" size="sm" leftSection={<IconUsers size={12} />}>
+                                            <Badge variant="light" color="gray" size="sm" style={{ flexShrink: 0 }} visibleFrom="sm" leftSection={<IconUsers size={12} />}>
                                                 {record.SharedWith.length}
                                             </Badge>
                                         </Tooltip>
                                     }
-                                    {modifyingServers.find(s => s === record.ID) &&
-                                        <Tooltip label="This server has an action pending" >
-                                            <Badge className={classes.pendingActionIndicator} w="0.5rem" color={'yellow.4'}/>
-                                        </Tooltip>
-                                    }
                                 </Group>
-                            )
+                            ),
                         },
                         {
                             accessor: 'GameType',
-                            title: 'Type',
-                            render: (record) => (
-                                <Group gap={'0.5rem'}>
-                                    {record.GameType}
+                            title: 'Game',
+                            sortable: true,
+                            visibleMediaQuery: theme => `(min-width: ${theme.breakpoints.sm})`,
+                            render: record => (
+                                <Group gap="0.5rem" wrap="nowrap">
                                     {gameIconFact('1.2rem').get(String(record.GameType))}
+                                    <Text size="sm" tt="capitalize">{record.GameType}</Text>
                                 </Group>
-                            )
+                            ),
                         },
                         {
                             accessor: 'State',
-                            render: (record) => (
-                                <Badge color={record.State === 'running' ? 'green' : 'red'}>
-                                    {record.State === 'running' ? 'Up' : 'Down'}
-                                </Badge>
-                            )
-                        }
-                    ]}
-                    records={servers}
-                    rowExpansion={{
-                        content: ({ record }) => {
-
-                            const isRunning = record.State === 'running';
-                            const pendingAction = modifyingServers.find(s => s === record.ID);
-
-                            return (
-                                <Stack py="md" px="sm" gap="md">
-                                    <Group className={classes.details} gap={48} align="top" justify="space-between">
-                                        <Stack gap="xs">
-                                            <Group gap={'0.25rem'} align="top">
-                                                <Text fw={600} size="md">Created at:</Text>
-                                                <Text size="md">{formatDate(record.Created)}</Text>
-                                            </Group>
-                                            <Text size="md">{systemInfoStore.systemIP}:{record.Ports.primary_port}</Text>
-                                            {!record.IsOwner &&
-                                                <Group gap="xs">
-                                                    <Text fw={600} size="md">Owner:</Text>
-                                                    <Avatar src={record.Owner.picture} radius="xl" size="sm" color="green">
-                                                        {displayUserName(record.Owner).charAt(0).toUpperCase()}
-                                                    </Avatar>
-                                                    <Text size="md">{displayUserName(record.Owner)}</Text>
-                                                </Group>
-                                            }
-                                        </Stack>
-                                        
-                                        {pendingAction ?
-                                            <Group gap={'1rem'}>
-                                                <Text size='md'>
-                                                    Server is being updated
-                                                </Text>
-                                                <Loader size='sm'/>
-                                            </Group> :
-                                            <Group align="center">
-                                                <Button
-                                                    rightSection={<IconRestore/>}
-                                                    variant="outline"
-                                                    onClick={() => doServerAction(record, ServerActionType.RESTART)}
-                                                >
-                                                    Restart
-                                                </Button>
-                                                {record.IsOwner && <>
-                                                    <Button
-                                                        variant="outline"
-                                                        onClick={() => setShareTarget(record)}
-                                                        rightSection={<IconShare/>}
-                                                    >
-                                                        Share
-                                                    </Button>
-                                                    <Button
-                                                        color='red' variant="outline"
-                                                        onClick={() => openDeleteConfirm(record)}
-                                                        rightSection={<IconTrash/>}
-                                                    >
-                                                        Delete
-                                                    </Button>
-                                                </>}
-                                                <Switch
-                                                    checked={isRunning}
-                                                    size="md"
-                                                    label={isRunning ? 'Up' : 'Down'}
-                                                    onClick={() => doServerAction(record, isRunning ? ServerActionType.STOP : ServerActionType.START)}/>
-                                            </Group>
-                                        }
-                                    </Group>
-
-                                    {isRunning && (
-                                        <ServerTerminal serverId={record.ID} serverName={record.Name} />
-                                    )}
-                                </Stack>
-                            )
+                            title: 'Status',
+                            sortable: true,
+                            width: isPhone ? 70 : 140,
+                            textAlign: isPhone ? 'center' : undefined,
+                            render: record => <StatusBadge state={record.State} message={record.StatusMessage} serverId={record.ID} compact={isPhone} />,
                         },
+                        {
+                            accessor: 'Players',
+                            sortable: true,
+                            width: 100,
+                            visibleMediaQuery: theme => `(min-width: ${theme.breakpoints.sm})`,
+                            render: record => (
+                                <Text size="sm" c={record.Live?.players ? undefined : 'dimmed'}>
+                                    {record.SupportsPlayers && record.Live?.players
+                                        ? <><AnimatedNumber value={record.Live.players.online} /> / {record.Live.players.max}</>
+                                        : '—'}
+                                </Text>
+                            ),
+                        },
+                        {
+                            accessor: 'Resources',
+                            sortable: true,
+                            width: 170,
+                            visibleMediaQuery: theme => `(min-width: ${theme.breakpoints.md})`,
+                            render: record => <ResourceCell live={record.Live} />,
+                        },
+                        {
+                            accessor: 'Address',
+                            visibleMediaQuery: theme => `(min-width: ${theme.breakpoints.xl})`,
+                            render: record => <CopyAddress address={address(record)} size="xs" />,
+                        },
+                        {
+                            accessor: 'actions',
+                            title: '',
+                            textAlign: 'right',
+                            width: 90,
+                            render: record => <ServerRowActions server={record} />,
+                        },
+                    ]}
+                    rowExpansion={{
+                        allowMultiple: true,
+                        expanded: { recordIds: expandedIds, onRecordIdsChange: setExpandedIds },
+                        collapseProps: { transitionDuration: 220, transitionTimingFunction: 'ease' },
+                        content: ({ record }) => <ServerExpansion server={record} hostIp={systemInfoStore.systemIP} />,
                     }}
                 />
                 </div>
-                </div>
+            </div>
+            <BulkActionBar selected={selected} onClear={() => setSelected([])} />
         </>
     );
-}
-
+});
 
 export default ServerTable;

@@ -9,10 +9,18 @@ from fastapi.responses import JSONResponse
 from app.routers import all_routers
 from app.internal import setup_logger
 from app.internal.auth import log_auth_config
-from app.models.servers import Server, ServerShare  # noqa: F401 – registers tables
+from app.internal.live import start_monitor, stop_monitor
+from app.models.servers import Server, ServerShare, ServerEvent  # noqa: F401 – registers tables
 from app.models.users import User  # noqa: F401 – registers tables
 from app.database import Base, engine
+from sqlalchemy import inspect, text
 from sqlalchemy.exc import OperationalError
+
+# Columns added after a table was first created. create_all() only creates
+# missing tables, so add these to existing databases on startup.
+ADDED_COLUMNS = [
+    ("servers", "status_message", "TEXT"),
+]
 
 DB_INIT_ATTEMPTS = 15
 DB_INIT_RETRY_SECONDS = 2
@@ -27,6 +35,7 @@ def init_database():
     for attempt in range(1, DB_INIT_ATTEMPTS + 1):
         try:
             Base.metadata.create_all(bind=engine)
+            add_missing_columns()
             logging.info("Database tables initialized successfully.")
             return
         except OperationalError as e:
@@ -39,12 +48,24 @@ def init_database():
             time.sleep(DB_INIT_RETRY_SECONDS)
 
 
+def add_missing_columns():
+    inspector = inspect(engine)
+    with engine.begin() as conn:
+        for table, column, ddl_type in ADDED_COLUMNS:
+            existing = {c["name"] for c in inspector.get_columns(table)}
+            if column not in existing:
+                conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {ddl_type}"))
+                logging.info(f"Added column {table}.{column}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     setup_logger()
     log_auth_config()
     init_database()
+    start_monitor()
     yield
+    stop_monitor()
 
 def create_app() -> FastAPI:
     app = FastAPI(title="Playhub Api", root_path="/api", lifespan=lifespan)

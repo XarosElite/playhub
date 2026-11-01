@@ -1,0 +1,36 @@
+.badge {
+    overflow: hidden;
+    transition: background-color 250ms ease, color 250ms ease;
+}
+
+.label {
+    display: inline-block;
+}
+
+.dot {
+    display: inline-block;
+    width: 0.4rem;
+    height: 0.4rem;
+    border-radius: 50%;
+    background-color: currentColor;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+    .dotPulse {
+        animation: status-pulse 1.2s ease-in-out infinite;
+    }
+
+    .busy {
+        animation: status-breathe 1.8s ease-in-out infinite;
+    }
+}
+
+@keyframes status-pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.35; transform: scale(0.7); }
+}
+
+@keyframes status-breathe {
+    0%, 100% { filter: brightness(1); }
+    50% { filter: brightness(1.18); }
+}

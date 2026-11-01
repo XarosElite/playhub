@@ -54,6 +54,7 @@ class AuthUser:
     email: Optional[str]
     name: Optional[str]
     picture: Optional[str]
+    expires_at: float = 0.0  # when the ID token expires (epoch seconds)
 
 
 class AuthError(Exception):
@@ -142,6 +143,7 @@ def verify_token(token: str) -> AuthUser:
         email=email,
         name=claims.get("name"),
         picture=claims.get("picture"),
+        expires_at=float(claims["exp"]),
     )
     _cache_put(key, float(claims["exp"]), user)
     return user

@@ -23,8 +23,12 @@ const ServerTerminal: React.FC<ServerTerminalProps> = ({ serverId, serverName })
   const fitAddonRef = useRef<FitAddon | null>(null);
 
   useEffect(() => {
-    if (!terminalRef.current) return;
-
+    const container = terminalRef.current;
+    if (!container) return;
+    // Created on the next tick: xterm crashes if disposed before its first
+    // render pass, which React's StrictMode remount would otherwise trigger.
+    let teardown = () => {};
+    const timer = window.setTimeout(() => {
     const term = new Terminal({
       cursorBlink: true,
       fontFamily: 'Consolas, Monaco, "Courier New", monospace',
@@ -39,7 +43,7 @@ const ServerTerminal: React.FC<ServerTerminalProps> = ({ serverId, serverName })
 
     const fitAddon = new FitAddon();
     term.loadAddon(fitAddon);
-    term.open(terminalRef.current);
+    term.open(container);
     fitAddon.fit();
 
     xtermRef.current = term;
@@ -102,13 +106,19 @@ const ServerTerminal: React.FC<ServerTerminalProps> = ({ serverId, serverName })
 
     window.addEventListener("resize", handleResize);
 
-    return () => {
+    teardown = () => {
       dataListener.dispose();
       window.removeEventListener("resize", handleResize);
+      ws.onmessage = null;
       if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
         ws.close();
       }
       term.dispose();
+    };
+    }, 0);
+    return () => {
+      window.clearTimeout(timer);
+      teardown();
     };
   }, [serverId, serverName]);
 
