@@ -1,6 +1,13 @@
 import React, { useContext } from "react";
 import { observer } from "mobx-react";
-import { Card, Group, Text, Title } from "@mantine/core";
+import { Card, Collapse, Group, Text, Title, UnstyledButton } from "@mantine/core";
+import { useLocalStorage } from "@mantine/hooks";
+import { IconChevronDown } from "@tabler/icons-react";
+import clsx from "clsx";
+import { motion } from "motion/react";
+
+import AnimatedNumber from "../../../Shared/Components/AnimatedNumber";
+import { fadeUp, stagger } from "../../../Shared/motion";
 import { AreaChart, AreaChartSeries, ChartData } from "@mantine/charts";
 
 import { SystemInfoContext } from "../../../Store/SystemInfoStore";
@@ -9,11 +16,38 @@ import classes from './SystemInfo.module.scss';
 
 const SystemInfo = observer(() => {
     const systemInfoStore = useContext(SystemInfoContext);
+    const [expanded, setExpanded] = useLocalStorage<boolean>({
+        key: 'playhub-system-info-expanded',
+        defaultValue: true,
+        getInitialValueInEffect: false,
+    });
+    const latest = systemInfoStore.latestSystemInfo?.sys_info;
 
     return (
         <div>
-            <Title order={2} mb={16}>System Information</Title>
-            <div className={classes.sysInfoContainer}>
+            <UnstyledButton
+                className={classes.header}
+                onClick={() => setExpanded(!expanded)}
+                aria-expanded={expanded}
+                aria-controls="system-info-panel"
+            >
+                <Group gap="sm" wrap="nowrap">
+                    <IconChevronDown
+                        size={22}
+                        stroke={2}
+                        className={clsx(classes.chevron, !expanded && classes.chevronCollapsed)}
+                    />
+                    <Title order={2}>System Information</Title>
+                </Group>
+                {!expanded && latest && (
+                    <Group gap="lg" wrap="nowrap" visibleFrom="xs">
+                        <Text size="sm" c="dimmed">CPU <Text span fw={600} c="var(--mantine-color-text)"><AnimatedNumber value={latest.cpu_usage} decimals={1} suffix="%" /></Text></Text>
+                        <Text size="sm" c="dimmed">RAM <Text span fw={600} c="var(--mantine-color-text)"><AnimatedNumber value={latest.used_ram_pct} decimals={1} suffix="%" /></Text> ({latest.used_ram_gb} GB)</Text>
+                    </Group>
+                )}
+            </UnstyledButton>
+            <Collapse in={expanded} id="system-info-panel">
+            <motion.div className={classes.sysInfoContainer} variants={stagger(0.08)} initial="hidden" animate="visible">
                 <SystemCard
                     title="Total CPU Usage"
                     data={systemInfoStore.systemHistory.map(item => item.sys_info)}
@@ -23,7 +57,7 @@ const SystemInfo = observer(() => {
                 >
                     <Group gap={6}>
                         <Text size="lg" fw={600}>Usage:</Text>
-                        <Text size="lg">{systemInfoStore.latestSystemInfo?.sys_info.cpu_usage}%</Text>
+                        <Text size="lg"><AnimatedNumber value={systemInfoStore.latestSystemInfo?.sys_info.cpu_usage} decimals={1} suffix="%" /></Text>
                     </Group>
                 </SystemCard>
                 <SystemCard
@@ -36,11 +70,12 @@ const SystemInfo = observer(() => {
                     <Group gap={6}>
                         <Text size="lg" fw={600}>Usage:</Text>
                         <Text size="lg" fs="italic">
-                            {systemInfoStore.latestSystemInfo?.sys_info.used_ram_pct}% ({systemInfoStore.latestSystemInfo?.sys_info.used_ram_gb}  GB)
+                            <AnimatedNumber value={systemInfoStore.latestSystemInfo?.sys_info.used_ram_pct} decimals={1} suffix="%" /> ({systemInfoStore.latestSystemInfo?.sys_info.used_ram_gb} GB)
                         </Text>
                     </Group>
                 </SystemCard>
-            </div>
+            </motion.div>
+            </Collapse>
         </div>
     )
 });
@@ -59,7 +94,7 @@ interface SystemCardProps {
  */
 const SystemCard: React.FC<SystemCardProps> = ({title, data, series, dataKey, label, children}) => {
     return(
-        <Card padding="md" shadow="md" className={classes.systemCard}>
+        <Card component={motion.div} variants={fadeUp} padding="md" shadow="md" className={classes.systemCard}>
             <Title order={4}>{title}</Title>
             <Card.Section>
                 <AreaChart

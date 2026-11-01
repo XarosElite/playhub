@@ -30,6 +30,9 @@ common_fields:
 minecraft:
   image: itzg/minecraft-server
   internal_port: 25565
+  protocol: tcp
+  data_path: /data
+  status_query: minecraft
   common_fields:
     - MAX_PLAYERS
   fields:
@@ -68,6 +71,9 @@ minecraft:
 palworld:
   image: thijsvanloef/palworld-server-docker:latest
   internal_port: 8211
+  # Palworld's game port is UDP.
+  protocol: udp
+  data_path: /palworld
   common_fields:
     - SERVER_NAME
     - SERVER_DESCRIPTION

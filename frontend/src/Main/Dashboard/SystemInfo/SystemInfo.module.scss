@@ -11,4 +11,29 @@
     display: flex;
     flex-wrap: wrap;
     gap: 1rem;
+    padding-top: 1rem;
+}
+
+.header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    width: 100%;
+    padding: 0.25rem 0.5rem;
+    margin-left: -0.5rem;
+    border-radius: var(--mantine-radius-md);
+
+    &:hover {
+        background-color: light-dark(var(--mantine-color-gray-1), var(--mantine-color-dark-6));
+    }
+}
+
+.chevron {
+    flex-shrink: 0;
+    transition: transform 150ms ease;
+}
+
+.chevronCollapsed {
+    transform: rotate(-90deg);
 }

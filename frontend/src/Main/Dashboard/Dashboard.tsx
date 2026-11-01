@@ -3,11 +3,13 @@ import { Stack, Title } from "@mantine/core";
 import SystemInfo from "./SystemInfo";
 import ServerTable from "./ServerTable";
 
+import classes from './Dashboard.module.scss';
+
 const Dashboard = () => {
     return(
-        <Stack gap={64}>
+        <Stack gap="xl" className={classes.dashboard}>
             <SystemInfo/>
-            <Stack>
+            <Stack className={classes.servers}>
                 <Title order={2}>Servers</Title>
                 <ServerTable/>
             </Stack>

@@ -16,3 +16,13 @@
 input {
   font-size: 16px !important;
 }
+/* Buttons and icon buttons press in slightly (Mantine's default is a 1px nudge). */
+@media (prefers-reduced-motion: no-preference) {
+  .mantine-active {
+    transition: transform 120ms ease, background-color 150ms ease, color 150ms ease;
+  }
+
+  .mantine-active:active:not(:disabled):not([data-disabled]) {
+    transform: scale(0.96);
+  }
+}

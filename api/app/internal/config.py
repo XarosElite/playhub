@@ -17,6 +17,15 @@ Field schema keys (all optional except where noted):
     required     user must provide a value (default: false)
     env          container environment variable name (default: the field name)
 
+Game keys besides fields:
+    image          Docker image (required)
+    internal_port  Port the game listens on inside the container (required)
+    protocol       tcp | udp for the game port (default: tcp)
+    data_path      Directory inside the container holding the world/save data.
+                   Mounted from a named volume so it survives recreating the
+                   container (e.g. when settings change).
+    status_query   How to read live status such as player counts: minecraft | none
+
 A game's ``common_fields`` is a list whose entries are either the name of a
 top-level common field, or a mapping ``{field: NAME, ...overrides}`` where the
 overrides (e.g. ``env``, ``default``, ``max``) are merged over the shared
@@ -31,6 +40,8 @@ import yaml
 GAMES_YAML_PATH = Path(__file__).resolve().parent.parent.parent / "games.yaml"
 
 FIELD_TYPES = {"string", "password", "boolean", "integer", "number"}
+PROTOCOLS = {"tcp", "udp"}
+STATUS_QUERIES = {"minecraft", "none"}
 FIELD_KEYS = {"type", "default", "enum", "min", "max", "label", "description",
               "placeholder", "required", "env"}
 # Keys that are only meaningful to the backend and are not sent to clients.
@@ -165,6 +176,15 @@ def _resolve_game(game_type: str, raw: Any, common_defs: dict[str, Any]) -> dict
     internal_port = raw.get("internal_port") or raw.get("default_port")
     if not isinstance(internal_port, int):
         raise GameConfigError(f"{where}: 'internal_port' must be an integer")
+    protocol = raw.get("protocol", "tcp")
+    if protocol not in PROTOCOLS:
+        raise GameConfigError(f"{where}: 'protocol' must be one of {sorted(PROTOCOLS)}")
+    data_path = raw.get("data_path")
+    if data_path is not None and not (isinstance(data_path, str) and data_path.startswith("/")):
+        raise GameConfigError(f"{where}: 'data_path' must be an absolute path")
+    status_query = raw.get("status_query", "none")
+    if status_query not in STATUS_QUERIES:
+        raise GameConfigError(f"{where}: 'status_query' must be one of {sorted(STATUS_QUERIES)}")
 
     common_fields: dict[str, dict] = {}
     for entry in raw.get("common_fields") or []:
@@ -203,10 +223,18 @@ def _resolve_game(game_type: str, raw: Any, common_defs: dict[str, Any]) -> dict
         "game_type": game_type,
         "image": raw["image"],
         "internal_port": internal_port,
+        "protocol": protocol,
+        "data_path": data_path,
+        "status_query": status_query,
         "common_fields": common_fields,
         "fields": fields,
         "docker_override": raw.get("docker_override") or {},
     }
+
+
+def container_port_key(game: dict) -> str:
+    """Docker port mapping key for the game's port, e.g. '25565/tcp'."""
+    return f"{game['internal_port']}/{game['protocol']}"
 
 
 def load_games(path: Path = GAMES_YAML_PATH) -> dict[str, dict]:
@@ -242,6 +270,8 @@ def public_game(game: dict) -> dict:
         "game_type": game["game_type"],
         "image": game["image"],
         "internal_port": game["internal_port"],
+        "protocol": game["protocol"],
+        "supports_players": game["status_query"] != "none",
         "common_fields": strip(game["common_fields"]),
         "fields": strip(game["fields"]),
     }

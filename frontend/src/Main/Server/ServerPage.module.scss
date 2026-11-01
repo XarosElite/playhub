@@ -1,0 +1,45 @@
+.back {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    width: fit-content;
+    transition: color 150ms ease, transform 150ms ease;
+
+    &:hover {
+        color: var(--mantine-color-text);
+        transform: translateX(-2px);
+    }
+}
+
+.gameIcon {
+    display: flex;
+    padding: 0.5rem;
+    border-radius: var(--mantine-radius-md);
+    background-color: light-dark(var(--mantine-color-gray-1), var(--mantine-color-dark-6));
+}
+
+.tab {
+    transition: color 150ms ease, background-color 150ms ease;
+}
+
+.tabPanel {
+    padding-top: var(--mantine-spacing-lg);
+}
+
+.console {
+    border-radius: var(--mantine-radius-md);
+    overflow: hidden;
+    border: 1px solid var(--mantine-color-dark-4);
+    background-color: #141517;
+}
+
+.consoleHeader {
+    padding: 0.5rem 0.75rem;
+    background-color: var(--mantine-color-dark-6);
+    color: var(--mantine-color-gray-3);
+}
+
+.consoleBody {
+    height: min(60vh, 34rem);
+    padding: 0.5rem;
+}

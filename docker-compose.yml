@@ -11,6 +11,10 @@ services:
       - .env
     environment:
       DOCKER_HOST: tcp://docker-proxy:2375
+      # Where the API reaches game servers' published ports (for player counts).
+      GAME_HOST: host.docker.internal
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - ${API_PORT:-8001}:8000
     depends_on:

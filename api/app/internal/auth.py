@@ -27,6 +27,8 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from google.oauth2 import id_token
 
+from app.internal.users import record_user
+
 FIREBASE_PROJECT_ID = (
     os.environ.get("FIREBASE_PROJECT_ID") or os.environ.get("VITE_FIREBASE_PROJECT_ID") or ""
 ).strip()
@@ -52,6 +54,7 @@ class AuthUser:
     email: Optional[str]
     name: Optional[str]
     picture: Optional[str]
+    expires_at: float = 0.0  # when the ID token expires (epoch seconds)
 
 
 class AuthError(Exception):
@@ -140,6 +143,7 @@ def verify_token(token: str) -> AuthUser:
         email=email,
         name=claims.get("name"),
         picture=claims.get("picture"),
+        expires_at=float(claims["exp"]),
     )
     _cache_put(key, float(claims["exp"]), user)
     return user
@@ -159,10 +163,13 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
     try:
-        return await run_in_threadpool(verify_token, credentials.credentials)
+        user = await run_in_threadpool(verify_token, credentials.credentials)
     except AuthError as e:
         headers = {"WWW-Authenticate": "Bearer"} if e.status_code == status.HTTP_401_UNAUTHORIZED else None
         raise HTTPException(status_code=e.status_code, detail=e.detail, headers=headers) from None
+    # Keep the user directory (used for sharing) up to date. Throttled internally.
+    await run_in_threadpool(record_user, user)
+    return user
 
 
 CurrentUser = Annotated[AuthUser, Depends(get_current_user)]

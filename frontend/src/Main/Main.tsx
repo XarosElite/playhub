@@ -1,4 +1,6 @@
-import { Link, Outlet, Route, Routes, useLocation } from "react-router-dom";
+import { Link, Route, Routes, useLocation } from "react-router-dom";
+import { AnimatePresence, motion } from "motion/react";
+import { notifications } from "@mantine/notifications";
 import { ActionIcon, AppShell, Avatar, Burger, Group, Image, Menu, NavLink, Text, Tooltip, UnstyledButton, useMantineColorScheme } from "@mantine/core";
 import { IconChevronDown, IconHome2, IconLogout, IconMoon, IconSettings, IconSun } from "@tabler/icons-react";
 import { observer } from "mobx-react";
@@ -6,6 +8,7 @@ import { useDisclosure } from "@mantine/hooks";
 
 import Settings from "./Settings";
 import Dashboard from "./Dashboard";
+import ServerPage from "./Server";
 
 import bannerLight from '/playhub_logo_light.svg';
 import bannerDark from '/playhub_logo_dark.svg';
@@ -15,6 +18,9 @@ import NotFound from "../NotFound";
 import { useContext, useEffect } from "react";
 import { SystemInfoContext } from "../Store/SystemInfoStore";
 import { AuthContext } from "../Store/AuthStore";
+import { ServerStoreContext } from "../Store/ServerStore";
+import { page } from "../Shared/motion";
+import { celebrateAt } from "../Shared/celebrate";
   
 const navLinks = [
   { id: 'dashboard', icon: IconHome2, label: 'Dashboard', link: '/' },
@@ -31,10 +37,12 @@ const Main = observer(() => {
     const darkMode = colorScheme === 'dark';
 
     // for determining current selected tab on load
-    const currentPath = useLocation()?.pathname;
+    const location = useLocation();
+    const currentPath = location.pathname;
 
     const systemInfoStore = useContext(SystemInfoContext);
     const authStore = useContext(AuthContext);
+    const serverStore = useContext(ServerStoreContext);
     const user = authStore.user;
     const displayName = user?.displayName || user?.email || "Account";
     
@@ -42,7 +50,7 @@ const Main = observer(() => {
     const links = navLinks.map((item) => (
       <NavLink
         key={item.label}
-        active={item.link === currentPath || undefined}
+        active={(item.link === '/' ? currentPath === '/' || currentPath.startsWith('/server/') : item.link === currentPath) || undefined}
         label={item.label}
         leftSection={<item.icon stroke={1.5} />}
         component={Link}
@@ -62,6 +70,20 @@ const Main = observer(() => {
       const intervalId = setInterval(doFetch, 3000);
       return () => clearInterval(intervalId);
     }, [systemInfoStore]);
+
+    /**
+     * Live server updates for every page, and a small celebration when a newly
+     * created server comes up.
+     */
+    useEffect(() => {
+      const unsubscribe = serverStore.subscribe();
+      const stopListening = serverStore.onServerLive(server => {
+        notifications.show({ title: `🎉 ${server.Name} is live!`, message: 'Your server is up and ready for players.', color: 'green' });
+        // Wait a frame so the badge has re-rendered as "Running".
+        requestAnimationFrame(() => celebrateAt(document.querySelector(`[data-status-badge="${CSS.escape(server.ID)}"]`)));
+      });
+      return () => { stopListening(); unsubscribe(); };
+    }, [serverStore]);
 
     return (
         <AppShell
@@ -117,13 +139,16 @@ const Main = observer(() => {
             </Tooltip>
         </AppShell.Navbar>
         <AppShell.Main>
-            <Routes>
-              <Route path="/" element={<Dashboard/>} />
-              {/* <Route path="server/:serverId" element={<div>server goes here</div>} /> */}
-              <Route path='/settings' element={<Settings/>}/>
-              <Route path="*" element={<NotFound />} />
-            </Routes>
-            <Outlet/>
+            <AnimatePresence mode="wait" initial={false}>
+              <motion.div key={location.pathname} variants={page} initial="initial" animate="animate" exit="exit">
+                <Routes location={location}>
+                  <Route path="/" element={<Dashboard/>} />
+                  <Route path="/server/:serverId" element={<ServerPage/>} />
+                  <Route path='/settings' element={<Settings/>}/>
+                  <Route path="*" element={<NotFound />} />
+                </Routes>
+              </motion.div>
+            </AnimatePresence>
         </AppShell.Main>
       </AppShell>
     )
